@@ -20,6 +20,9 @@ interaction-manager/[Bb]uild/
 interaction-manager/[Bb]uilds/
 interaction-manager/[Ll]ogs/
 interaction-manager/[Uu]ser[Ss]ettings/
+!interaction-manager/[Uu]ser[Ss]ettings/[Ll]ayouts/
+!interaction-manager/[Uu]ser[Ss]ettings/[Ll]ayouts/*.wlt
+!interaction-manager/[Uu]ser[Ss]ettings/[Ll]ayouts/*.dwlt
 interaction-manager/[Mm]emory[Cc]aptures/
 
 # IDE / solution files
@@ -31,10 +34,13 @@ interaction-manager/[Mm]emory[Cc]aptures/
 *.userprefs
 .idea/
 .vs/
+.vscode/
+.vsconfig
 ExportedObj/
 
-# Large third-party source
-interaction-manager/liblouis/
+# Porcupine wake word models
+*.ppn
+*.ppn.meta
 
 # NuGet package cache
 interaction-manager/Packages/*/

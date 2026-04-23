@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a77c135479e584fccb767e7d302706da, type: 3}
+  m_Name: SpeechSettings
+  m_EditorClassIdentifier: 
+  selectionMode: 1
+  voiceName: en-AU-Neural2-A
+  languageCode: en-AU
+  voiceGender: 2
+  speakingRate: 1
+  pitch: 1
+  valuesPause: 300
+  labelPause: 200
+  complexDataThreshold: 3
+  complexDataRate: slow
+  emphasisLevel: moderate
+  emphasizeValues: 1
+  numberPronunciation: 0

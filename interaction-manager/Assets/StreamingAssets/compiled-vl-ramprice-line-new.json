@@ -1,0 +1,84 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "description": "Computer component price line chart",
+  "width": 487,
+  "height": 364,
+  "data": {
+    "name": "source",
+    "values": [
+      { "month": "February 2025", "price_aud ($)": 190, "series": "Memory" },
+      { "month": "February 2025", "price_aud ($)": 330, "series": "Storage" },
+      { "month": "February 2025", "price_aud ($)": 850, "series": "GPU" },
+      { "month": "April 2025", "price_aud ($)": 200, "series": "Memory" },
+      { "month": "April 2025", "price_aud ($)": 345, "series": "Storage" },
+      { "month": "April 2025", "price_aud ($)": 830, "series": "GPU" },
+      { "month": "June 2025", "price_aud ($)": 225, "series": "Memory" },
+      { "month": "June 2025", "price_aud ($)": 360, "series": "Storage" },
+      { "month": "June 2025", "price_aud ($)": 820, "series": "GPU" },
+      { "month": "August 2025", "price_aud ($)": 360, "series": "Memory" },
+      { "month": "August 2025", "price_aud ($)": 360, "series": "Storage" },
+      { "month": "August 2025", "price_aud ($)": 840, "series": "GPU" },
+      { "month": "October 2025", "price_aud ($)": 600, "series": "Memory" },
+      { "month": "October 2025", "price_aud ($)": 425, "series": "Storage" },
+      { "month": "October 2025", "price_aud ($)": 860, "series": "GPU" },
+      { "month": "December 2025", "price_aud ($)": 850, "series": "Memory" },
+      { "month": "December 2025", "price_aud ($)": 525, "series": "Storage" },
+      { "month": "December 2025", "price_aud ($)": 850, "series": "GPU" },
+      { "month": "February 2026", "price_aud ($)": 1100, "series": "Memory" },
+      { "month": "February 2026", "price_aud ($)": 600, "series": "Storage" },
+      { "month": "February 2026", "price_aud ($)": 835, "series": "GPU" }
+    ]
+  },
+  "mark": {
+    "type": "line",
+    "tooltip": true,
+    "point": {
+      "filled": true,
+      "size": 100
+    }
+  },
+  "encoding": {
+    "x": {
+      "field": "month",
+      "type": "ordinal",
+      "sort": null,
+      "title": "Month"
+    },
+    "y": {
+      "field": "price_aud ($)",
+      "type": "quantitative",
+      "title": "Average Price (AUD)",
+      "scale": {
+        "domain": [0, 1200]
+      },
+      "axis": {
+        "values": [0, 200, 400, 600, 800, 1000, 1200]
+      }
+    },
+    "color": {
+      "field": "series",
+      "type": "nominal"
+    },
+    "opacity": {
+      "value": 1
+    }
+  },
+  "overview": {
+    "title": "DDR5 Memory, SSD Storage and GPU average price, February 2025 to February 2026, multi-series line chart.",
+    "x_axis": "The X axis shows every second month from February 2025 to February 2026.",
+    "y_axis": "The Y axis shows average price, from 0 dollars to $1200, in steps of 200.",
+    "Memory": "Plotted using the plus symbol, Memory prices rose sharply, with two major surges across the period.",
+    "Storage": "Plotted with the cross symbol, Storage prices rose gradually and steadily throughout the period.",
+    "GPU": "Plotted with the arrow symbol, GPU prices remained relatively flat across the period.",
+    "summary": "Storage rose steadily, GPU stayed flat, and Memory surged dramatically. Memory crosses Storage at $360 in August 2025, then meets GPU at $850 in December 2025, before pulling sharply away from both."
+  },
+  "config": {
+    "background": "white",
+    "view": {
+      "stroke": null
+    },
+    "mark": {
+      "strokeWidth": 2
+    }
+  }
+}

@@ -11,7 +11,7 @@ Reference implementation for the paper:
 
 The system combines touch input with a conversational AI agent on a refreshable tactile display (RTD), enabling deictic queries that fuse touch context with spoken language. For example, touching two data points and asking *"what is the trend between these points?"*
 
-> **Note:** The initial release of the Interaction Manager will be committed by the end of PacificVis 2026. Stand design files will follow shortly after.
+> **Note:** Stand design files (for mounting the Leap Motion Controller above the Dot Pad) will be added shortly.
 
 ## Architecture
 
@@ -25,13 +25,16 @@ Three components communicate via MQTT:
 
 ## Requirements
 
+**Platform**
+- macOS (arm64 or x86_64) — Windows support is in progress
+
 **Hardware**
-- Dot Pad RTD (connected via USB serial)
+- Dot Pad RTD
 - Ultraleap Leap Motion Controller 1 or 2
 
 **Software**
 - Unity 2022.3 LTS or later
-- Ultraleap Hyperion (for Leap Motion Controller 1 / 2) - must be running on the host machine
+- Ultraleap Hyperion — must be running before launching the Interaction Manager
 - Python 3.10+
 - Google Cloud project with Speech-to-Text and Text-to-Speech APIs enabled
 - Picovoice Porcupine access key (free tier at console.picovoice.ai)
@@ -49,6 +52,11 @@ cp .env.example .env
 # Fill in .env with your credentials
 ```
 
+Set `DOT_PAD_PORT` in `.env` to your Dot Pad's serial port. To find it, connect the Dot Pad via USB and run:
+```bash
+ls /dev/tty.*
+```
+
 **2. Create Python environment**
 
 ```bash
@@ -58,34 +66,33 @@ venv/bin/pip install -r requirements.txt
 
 **3. Add credential files to repo root**
 
-- `key-service-account-google.json` - Google Cloud service account key
-- `key-porcupine.json` - contains your Porcupine access key and path to your custom wake word model:
+- `key-service-account-google.json` — Google Cloud service account key
+- `key-porcupine.json` — Porcupine access key and wake word path:
   ```json
   {
     "access_key": "your-key-here",
     "keyword_path": "your-wake-word.ppn"
   }
   ```
-  Train and download a custom wake word `.ppn` file at [console.picovoice.ai](https://console.picovoice.ai), then place it in `interaction-manager/` (next to `key-porcupine.json`)
+  Train and download a custom wake word `.ppn` file at [console.picovoice.ai](https://console.picovoice.ai), then place it in `interaction-manager/`.
 
 **4. Add charts**
 
-A sample chart is included at `interaction-manager/Assets/StreamingAssets/compiled-vl-interestrates-line-new.json` (Australian interest rates, 2019-2025). To add your own, place compiled Vega-Lite JSON files (named `compiled-vl-{chartType}-{dataName}-new.json`) into `interaction-manager/Assets/StreamingAssets/`, or use the in-app file importer at runtime.
+A sample chart is included: `interaction-manager/Assets/StreamingAssets/compiled-vl-interestrates-line-new.json` (Australian interest rates, 2019–2025). To add your own, place compiled Vega-Lite JSON files named `compiled-vl-{dataName}-{chartType}-new.json` into `interaction-manager/Assets/StreamingAssets/`.
 
 **5. Open Unity project**
 
-Open `interaction-manager/` in Unity.
+Open `interaction-manager/` in Unity 2022.3. On first open, Unity will automatically download the Ultraleap Tracking package via Package Manager (requires internet). Open the scene `Assets/Scenes/Feelogue.unity` if it does not load automatically.
 
 **6. Run the agent**
 
 ```bash
 source venv/bin/activate
-pip install -r requirements.txt
 jupyter notebook
 ```
 
-Open `agent.ipynb` in the browser and run the cells.
+Open `agent.ipynb` and run all cells.
 
 **7. Run the Interaction Manager**
 
-Ensure the Ultraleap Hand Tracking software is running, then press **Play** in the Unity Editor (or build and run the application).
+Ensure the Dot Pad is connected via USB and Ultraleap Hyperion is running, then press **Play** in the Unity Editor. Select a chart from the dropdown in the Game View to load it onto the RTD, or say your trained wake word followed by a load command such as *"load the interest rates chart"*.

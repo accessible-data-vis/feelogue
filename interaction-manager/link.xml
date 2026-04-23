@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+<linker>
+    <assembly fullname="Google.Api.Commonprotos">
+        <type fullname="google.api.commonprotos" preserve="all"/>
+    </assembly>
+
+    <assembly fullname="Google.Api.Gax">
+        <type fullname="google.api.gax" preserve="all"/>
+    </assembly>
+
+    <assembly fullname="Google.Api.Gax.Grpc">
+        <type fullname="google.api.gax.Grpc" preserve="all"/>
+    </assembly>
+
+    <assembly fullname="Google.Apis">
+        <type fullname="google.Apis" preserve="all"/>
+    </assembly>
+
+    <assembly fullname="Google.Apis.Auth">
+        <type fullname="google.Apis.auth" preserve="all"/>
+    </assembly>
+
+    <assembly fullname="Google.Apis.Core">
+        <type fullname="google.Apis.core" preserve="all"/>
+    </assembly>
+
+    <assembly fullname="Google.Cloud.Speech">
+        <type fullname="google.cloud.speech.v1" preserve="all"/>
+    </assembly>
+
+    <assembly fullname="Google.Longrunning">
+        <type fullname="google.longrunning" preserve="all"/>
+    </assembly>
+
+    <assembly fullname="Google.Protobuf">
+        <type fullname="google.protobuf" preserve="all"/>
+    </assembly>
+
+    <assembly fullname="Grpc.Auth">
+        <type fullname="Grpc.auth" preserve="all"/>
+    </assembly>
+
+    <assembly fullname="Grpc.Core.Api">
+        <type fullname="Grpc.core.api" preserve="all"/>
+    </assembly>
+
+    <assembly fullname="Grpc.Net.Client">
+        <type fullname="Grpc.net.client" preserve="all"/>
+    </assembly>
+
+    <assembly fullname="Grpc.Net.Common">
+        <type fullname="Grpc.net.common" preserve="all"/>
+    </assembly>
+
+    <assembly fullname="Microsoft.Bcl.Asyncinterfaces">
+        <type fullname="microsoft.bcl.asyncinterfaces" preserve="all"/>
+    </assembly>
+    
+    <assembly fullname="Microsoft.Extensions.Dependencyinjection.Abstractions">
+        <type fullname="microsoft.extensions.dependencyinjection.abstractions" preserve="all"/>
+    </assembly>
+
+    <assembly fullname="Microsoft.Extensions.Logging.Abstractions">
+        <type fullname="microsoft.extensions.logging.abstractions" preserve="all"/>
+    </assembly>
+
+    <assembly fullname="Newtonsoft.Json">
+        <type fullname="newtonsoft.json" preserve="all"/>
+    </assembly>
+
+    <assembly fullname="System.Buffers">
+        <type fullname="system.buffers" preserve="all"/>
+    </assembly>
+
+    <assembly fullname="System.Codedom">
+        <type fullname="system.codedom" preserve="all"/>
+    </assembly>
+
+    <assembly fullname="System.Diagnostics.Diagnosticsource">
+        <type fullname="system.diagnostics.diagnosticsource" preserve="all"/>
+    </assembly>
+
+    <assembly fullname="System.Management">
+        <type fullname="system.management" preserve="all"/>
+    </assembly>
+
+    <assembly fullname="System.Memory">
+        <type fullname="system.memory" preserve="all"/>
+    </assembly>
+
+    <assembly fullname="System.Numerics.Vectors">
+        <type fullname="system.numerics.vectors" preserve="all"/>
+    </assembly>
+
+    <assembly fullname="System.Runtime.Compilerservices.Unsafe">
+        <type fullname="system.runtime.compilerservices.unsafe" preserve="all"/>
+    </assembly>
+</linker>
+-->

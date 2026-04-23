@@ -1,0 +1,52 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!78 &1
+TagManager:
+  serializedVersion: 2
+  tags:
+  - MQTT_R
+  - LeftIndex
+  - AudioPrompt
+  - TrackedCube
+  - TrackedCubeOne
+  - TrackedCubeTwo
+  - MQTT_Receiver
+  - AudioTone
+  - DotPad
+  layers:
+  - Default
+  - TransparentFX
+  - Ignore Raycast
+  - FingerSnap
+  - Water
+  - UI
+  - Pins
+  - Fingers
+  - PhysicalHands
+  - PhysicalHandsReset
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  m_SortingLayers:
+  - name: Default
+    uniqueID: 0
+    locked: 0
