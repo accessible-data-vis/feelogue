@@ -250,6 +250,7 @@ public class RTDUpdater : MonoBehaviour, InterfaceRTDUpdater
     void Update()
     {
         // Handle runtime changes to rtdDeviceConnected
+        if (_serialController == null) return;
         if (rtdDeviceConnected)
         {
             // If RTD is now connected but not armed, re-arm it

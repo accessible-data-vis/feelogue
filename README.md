@@ -64,7 +64,7 @@ python3 -m venv venv
 venv/bin/pip install -r requirements.txt
 ```
 
-**3. Add credential files to repo root**
+**3. Add credential files to `interaction-manager` folder**
 
 - `key-service-account-google.json` — Google Cloud service account key
 - `key-porcupine.json` — Porcupine access key and wake word path:

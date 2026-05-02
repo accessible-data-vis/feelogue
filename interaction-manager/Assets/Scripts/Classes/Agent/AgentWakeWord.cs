@@ -76,7 +76,7 @@ public class AgentWakeWord : MonoBehaviour, InterfaceAgentWakeWord
     }
 
     private void ToggleProcessing()
-    {
+    {  
         if (!_isProcessing)
         {
             StartProcessing();
@@ -207,6 +207,7 @@ public class AgentWakeWord : MonoBehaviour, InterfaceAgentWakeWord
     private void SetError(string message)
     {
         isError = true;
+        Debug.LogError(message);
         StopProcessing();
     }
 
