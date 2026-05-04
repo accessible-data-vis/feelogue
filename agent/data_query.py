@@ -9,8 +9,8 @@ from .context import agent_context
 from .config import OPENAI_MODEL_ANALYSIS
 from .prompts import get_data_query_prefix
 
-# LLM for CSV/data queries
-csv_llm = ChatOpenAI(model=OPENAI_MODEL_ANALYSIS, temperature=0.5)
+# LLM for CSV/data queries - temperature=0 for reliable tool-call compliance
+csv_llm = ChatOpenAI(model=OPENAI_MODEL_ANALYSIS, temperature=0, stop=None)
 
 # Cache for the pandas agent executor — rebuilt only when dataset or columns change
 _cached_executor = None
@@ -46,8 +46,10 @@ def _get_executor(df, selected_data, columns_to_use: list):
             selected_data,
             verbose=True,
             allow_dangerous_code=True,
+            agent_type="openai-tools",
             prefix=get_data_query_prefix(),
-            max_iterations=3,
+            max_iterations=6,
+            agent_executor_kwargs={"handle_parsing_errors": True},
         )
         _cached_version = version
         _cached_df_id = df_id
@@ -98,7 +100,13 @@ def csv_query_tool(query: str) -> str:
         executor = _get_executor(df, selected_data, columns_to_use)
 
         result = executor.invoke({"input": query})
-        return result.get("output", "I wasn't able to get a result for that query.")
+        if isinstance(result, str):
+            return result
+        output = result.get("output")
+        if output:
+            return output
+        return "I wasn't able to get a result for that query."
 
     except Exception as e:
+        print(f"csv_query_tool error: {type(e).__name__}: {e}")
         return f"I encountered an error while processing your query: {str(e)}"

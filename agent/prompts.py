@@ -24,36 +24,73 @@ from .context import agent_context
 # Intent Classification
 # =============================================================================
 
-INTENT_CLASSIFIER_SYSTEM_PROMPT = "You are a query classifier. Return only valid JSON."
-
+INTENT_CLASSIFIER_SYSTEM_PROMPT = "You are a query classifier. Return only valid JSON in lower_case"
 
 def get_intent_classification_prompt(user_query: str) -> str:
     """Prompt for classifying user intent and detecting deictic references."""
     return f"""
-Analyze the user's query for a chart visualization system.
-
+You are a query classifier for a chart visualization system, the query that you will get is from an audio transcription,
+Pay attention to what actually does the user want.
 Query: "{user_query}"
 
 Return JSON with two fields:
+1. "intent" - a dictionary of one or more of:
+   - load_chart: requests to load, display, plot, or switch to a dataset or chart (e.g., "show the sales chart", "load GPU prices", "display the bar chart")
 
-1. "intent" - exactly one of:
-   - load_chart: asking to load, show, plot, or display a dataset/chart
-   - chart_overview: asking about the CURRENTLY LOADED chart specifically (e.g., "what is this about?", "what am I looking at?", "describe this chart", "what does this show?"). NOT for general questions about how chart types work.
-   - image_analysis: asking to analyze an uploaded/plotted image
+   - chart_overview: requests a high-level description or summary of the CURRENTLY LOADED chart (e.g., "what does this show?", "describe this chart", "what am I looking at?"). MUST be broad and summary-level. Do NOT use for questions about specific elements (e.g., "first line", "this bar", "highest point") — those belong to image_analysis or data_analysis.
+
+    - image_analysis: Use when the answer requires visual inspection of the 
+    rendered chart. This includes: extracting visual properties (colors, 
+    shapes, layout), counting elements (bars, lines), identifying by position
+    or resolving WHICH specific element is being referenced before any 
+    data operation. MUST precede data_analysis when the target element 
+    is identified visually rather than by name.
+
    - touch_interaction: references something touched/highlighted on the chart
-   - data_analysis: comparisons, calculations, or statistics on the data — including aggregates (avg/min/max), distributions (t-distribution, histogram), correlations, regressions, or any quantitative analysis
+
+   - data_analysis: comparisons, calculations, or statistics on the data — including aggregates (avg/min/max), distributions (t-distribution, histogram), correlations, regressions, or any quantitative analysis ONLY for calculations that can be done using python pandas
+
    - trend: patterns, trends, or changes over time
+
    - operations: manipulate chart view (zoom, pan, switch layer)
+
    - general_question: anything else, including general questions about how chart types work (e.g., "how do I read a bar chart?", "what is a scatterplot?")
+    Choose the MOST specific intent(s). If multiple apply, include all relevant intents, but avoid over-classifying.    
+    Separate out the query for each intent into "intent":"query". 
+    If multiple intents refer to the same subject (e.g., "each line", "this bar", "the chart"), you MUST explicitly repeat that subject in every intent query. Do NOT omit shared context. Each query must be fully self-contained and independently understandable. However, only include the question that needs to be resolved by that query intent.
+    Example: "What is the blue color line average"
+    Output:
+    "intents": [
+        {{
+        "type": "image_analysis",
+        "query": "What is the blue line?"
+        }},
+        {{
+        "type": "data_analysis",
+        "query": "What is the blue color line average?"
+        }}
+    ]
+    ALWAYS order the intents based on the list above. Sanitize the query but do not remove any important information that the user gives.
+    Input: Load the chart and how many bars are there?
+    For example: Input: Load the chart and how many bars are there? 
+    Output:
+    "intents": [
+        {{
+        "type": "load_chart",
+        "query": "Load the chart"
+        }},
+        {{
+        "type": "data_analysis",
+        "query": "How many bars are there in the chart"
+        }}
+    ]
+
 
 2. "has_deictic" - true only if the query explicitly references:
    - touched/highlighted elements ("this", "that", "these", "here", "there")
    - selected chart positions ("this point", "the selected value", "current")
    Do NOT mark as deictic if query is vague or just asks for data without referencing touch.
-
-Return only valid JSON, no explanation.
 """.strip()
-
 
 # =============================================================================
 # Chart Overview
@@ -120,11 +157,11 @@ _DATA_QUERY_PREFIX_BASE = """IMPORTANT:
   - Linear regression / line of best fit: import numpy as np; np.polyfit(df[x], df[y], 1) → returns [slope, intercept]
   - Summary stats: df[col].mean() / .median() / .std() / .min() / .max()
   - numpy is available for all statistical operations
-- You are a voice assistant. Your replies will be sent directly to a text-to-speech system.
-  Always respond in natural spoken English, as if you are talking to someone out loud. Do not generate '*' in your response.
-  Avoid lists, tables, bullet points, code blocks, or heavy formatting.
 - Do NOT try to draw, plot, or visualize any charts. Do NOT use matplotlib, seaborn, or any plotting library. Just describe what you find in words.
 - When analyzing trends, describe the pattern verbally (e.g., "The values increase steadily from X to Y, then decrease...").
+- Do not add any text or explanation.
+- Only output the final result.
+- Example: Mean:840.7143. Average: 384.3232
 """
 
 
@@ -212,7 +249,7 @@ DATASET_PREVIEW (partial):
   4. Summarize the general pattern (e.g., stable, volatile, increasing, decreasing, cyclical).
 
 **Maxim of Quality**:
-- Avoid using 'approximately' when a value is exact.
+-All numeric values MUST be rounded to 4 decimal places, whenever rounding is done, let the user know in a short concise way.
 
 **Maxim of Manner**:
 - Present the context before the requested information. For example, if the user asks for a value for node coordinates (X,Y), the response should be something like 'In [X], the Y-axis-name was [value of Y-axis]'.
@@ -238,7 +275,7 @@ DATASET_PREVIEW (partial):
 - Show your thought process step by step but do not present it to the user until they ask for it.
 - Do not ask the user for a time period or specific dates before answering. Always use the full dataset when responding.
 - When the user says 'this chart', 'this data', or 'this dataset', they mean the chart in the current context.
-"""
+""".strip()
 
     df = agent_context.get("df")
     has_hidden = df is not None and "visible" in df.columns and not df["visible"].all()
@@ -310,13 +347,39 @@ def get_rewrite_list_prompt(text: str) -> str:
     )
 
 
+def get_combine_multi_intent_responses_prompt(responses: dict[str,str]) -> str:
+    """Prompt for combining multiple response fragments into one coherent answer."""
+    return f"""
+    Combine these response parts into a single, natural-sounding spoken response.
+    Ensure it's concise, avoid repetition, and use plain English (no markdown).
+    Always round numerical answer to 4 decimal places and tell the use IF it is rounded by saying "rounded to four decimal places"
+
+    The format you are going to get is {{"intent":"response"}}
+
+    Response parts:
+    {responses}
+
+    Combined response:
+    """.strip()
+
+
 # =============================================================================
 # Image Analysis
 # =============================================================================
 
 IMAGE_ANALYSIS_SYSTEM_PROMPT = (
-    """You are an AI capable of analyzing charts and graphs. Analyze the image below."""
-)
+    "Every response must begin with the exact phrase 'From the image...' "
+    "and be written in plain conversational text only. "
+    "Do not use markdown, bullet points, bold, asterisks, headers, or newlines for formatting. "
+    "Write as if speaking aloud to someone. "
+    "Answer only the user's specific question. Be concise. "
+    "Base answers solely on what is visible in the image. "
+    "If something cannot be determined from the image, say: "
+    "'This cannot be determined from the image alone.' "
+    "DO NOT GIVE ANY NUMBERS EXCEPT FOR INTERSECTION"
+    "Use simple color names. Use qualifiers like 'around' or 'roughly' when estimating. "
+    "Example: From the image, the two lines intersect around 2021 near a value of 50."
+).strip()
 
 
 # =============================================================================

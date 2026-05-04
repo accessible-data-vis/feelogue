@@ -9,7 +9,7 @@ import pandas as pd
 
 from .chart_loader import analyze_user_intent_with_context
 from .client import client
-from .config import OPENAI_MODEL
+from .config import OPENAI_MODEL, OPENAI_MODEL_IMAGE
 from .context import (
     agent_context,
     clear_followup,
@@ -25,7 +25,7 @@ from .operations import (
     build_operations_rtd_command,
     resolve_operation_targets_to_values,
 )
-from .postprocessing import extract_highlighted_data_points, rewrite_long_node_lists_with_gpt
+from .postprocessing import extract_highlighted_data_points, rewrite_long_node_lists_with_gpt, combine_multi_intent_responses
 from .utils import strip_markdown
 from .prompts import (
     CHART_OVERVIEW_SYSTEM_PROMPT,
@@ -94,8 +94,9 @@ def _handle_image_analysis(user_query: str, base64_image: str | None) -> dict:
         )
 
     print("Processing multimodal image analysis...")
+    print(f"Model: {OPENAI_MODEL_IMAGE}")
     response = client.chat.completions.create(
-        model=OPENAI_MODEL,
+        model=OPENAI_MODEL_IMAGE,
         messages=[
             {"role": "system", "content": IMAGE_ANALYSIS_SYSTEM_PROMPT},
             {
@@ -117,7 +118,7 @@ def _handle_image_analysis(user_query: str, base64_image: str | None) -> dict:
 
 def _handle_operations(user_query: str, touchdata: dict, highlighted_context: dict) -> dict:
     """Extract and resolve a chart operation (zoom, pan, layer switch)."""
-    df = agent_context.get("df")
+    df = agent_context.get("df") 
     x_col, y_col = get_xy_cols()
 
     x_values = None
@@ -313,46 +314,127 @@ def _handle_data_query(user_query: str, touchdata: dict, highlighted_context: di
 
 def process_user_request(user_input: str) -> dict:
     """
-    Parse an incoming user request and route it to the appropriate handler.
+    Parse an incoming user request and route it to the appropriate handler(s).
+    Supports multiple intents in a single query.
     """
-    data = json.loads(user_input)
 
+    def _assemble_final_response(responses: dict) -> str:
+        """
+        Merging multi-intent responses when needed, if there is only one item then only return the response
+        Input:
+            responses: dictionary of {"intent":"response"}
+        Output:
+            Combined string of naturally spoken language of responses
+        """
+        if len(responses) > 1:
+            return combine_multi_intent_responses(responses)
+        if len(responses) == 1:
+            return next(iter(responses.values()))
+        return "I'm not sure how to help with that."
+    
+    def _inject_prior_result(intents: list, current_intent: str, response: str, fallback: str) -> None:
+        """Injecting previous intent's query and response to the next in order to provide context for the next intent
+        Input: 
+            intents: list of [{intent: str, query: str}]
+            current_intent: intent that has been currently resolved
+            response: response of current intent resolution
+            fallback: user query fallback
+
+        Output: 
+            returns null
+            Mutates intent list's query
+        """
+
+        for i, obj in enumerate(intents):
+            if obj.get("type") != current_intent:
+                prefix = f"From the same query, we already used {current_intent} and got: {response}. Use this if needed: "
+                intents[i]["query"] = prefix + obj.get("query", fallback)
+    
+    INTENT_HANDLERS = {
+    "load_chart":    lambda q, td, hc, img: _handle_load_chart(q),
+    "image_analysis":lambda q, td, hc, img: _handle_image_analysis(q, img),
+    "operations":    lambda q, td, hc, img: _handle_operations(q, td, hc),
+    "chart_overview":lambda q, td, hc, img: _handle_chart_overview(),
+}
+    DEFAULT_HANDLER = lambda q, td, hc, img: _handle_data_query(q, td, hc)
+
+    def _dispatch_intent(intent, query, touchdata, highlighted_context, base64_image):
+        """Call the appropriate intent handler"""
+        handler = INTENT_HANDLERS.get(intent, DEFAULT_HANDLER)
+        return handler(query, touchdata, highlighted_context, base64_image)
+    
+
+    def _merge_result(combined: dict, result: dict) -> None:
+        """Mutates combined with data from result."""
+        if result.get("rtd_command"):
+            if combined["rtd_command"] is None:
+                combined["rtd_command"] = result["rtd_command"]
+            else:
+                combined["rtd_command"].update(result["rtd_command"])
+
+        if result.get("nodes"):
+            combined["nodes"].update(result["nodes"])
+
+        ref = result.get("referents", {})
+        combined["referents"]["touch_used"]    |= bool(ref.get("touch_used"))
+        combined["referents"]["highlight_used"]|= bool(ref.get("highlight_used"))
+        combined["referents"]["touch_nodes"].update(ref.get("touch_nodes") or {})
+        combined["referents"]["highlight_nodes"].update(ref.get("highlight_nodes") or {})
+    
+
+
+    data = json.loads(user_input)
     if "user_request_for_agent" not in data:
         return _make_result(response="Invalid payload received.")
 
-    user_request = data["user_request_for_agent"]
-    transcript_data = user_request.get("transcript", {})
-    touchdata = user_request.get("touchdata", {})
-    highlighted_context = user_request.get("highlighted_context") or {}
-
-    user_query = transcript_data.get(
-        "text_transcript", transcript_data.get("transcript", "") or ""
-    ).strip()
+    user_request     = data["user_request_for_agent"] # unwrap json
+    transcript_data  = user_request.get("transcript", {})
+    touchdata        = user_request.get("touchdata", {})
+    highlighted_ctx  = user_request.get("highlighted_context") or {}
+    user_query       = (transcript_data.get("text_transcript") or transcript_data.get("transcript") or "").strip()
 
     ensure_df_headers_in_context()
-
-    base64_image = agent_context.get("image_data")
+    base64_image  = agent_context.get("image_data")
     classification = classify_query(user_query, has_image=bool(base64_image))
-    intent = classification["intent"]
+    intents        = classification["intents"]
 
-    # Override intent if mid-disambiguation on chart loading
     if agent_context.get("followup_stage") and agent_context.get("followup_topic") == "load_chart":
-        intent = "load_chart"
+        intents = [{"type": "load_chart", "query": user_query}]
 
-    agent_context["last_intent"] = intent
-    print(f"Detected Intent: {intent} | Deictic: {classification['has_deictic']}")
+    print(f"Detected Intents: {intents} | Deictic: {classification['has_deictic']}")
 
-    if intent == "load_chart":
-        return _handle_load_chart(user_query)
+    combined = {
+        "rtd_command": None,
+        "nodes": {},
+        "referents": {"touch_used": False, "highlight_used": False, "touch_nodes": {}, "highlight_nodes": {}},
+    }
+    responses : dict     = {}
+    followup_stage = False
 
-    if intent == "image_analysis":
-        return _handle_image_analysis(user_query, base64_image)
+    for intent_obj in intents:
+        intent = intent_obj.get("type", "")
+        query  = intent_obj.get("query", user_query)
+        agent_context["last_intent"] = intent
+        print(query, intent)
+        result = _dispatch_intent(intent, query, touchdata, highlighted_ctx, base64_image)
+        if not result:
+            continue
 
-    if intent == "operations":
-        return _handle_operations(user_query, touchdata, highlighted_context)
+        if result.get("response"):
+            print(result["response"])
+            responses[intent] = result["response"]
+            _inject_prior_result(intents, intent, result["response"], user_query)
 
-    if intent == "chart_overview":
-        return _handle_chart_overview()
+        _merge_result(combined, result)
 
-    # data_analysis, trend, touch_interaction, general_question
-    return _handle_data_query(user_query, touchdata, highlighted_context)
+        if result.get("followup_stage"):
+            followup_stage = True
+
+    return {
+        "response":      _assemble_final_response(responses),
+        "rtd_command":   combined["rtd_command"],
+        "nodes":         combined["nodes"] or None,
+        "referents":     combined["referents"],
+        "followup_stage": followup_stage,
+    }
+

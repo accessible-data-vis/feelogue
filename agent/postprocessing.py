@@ -7,8 +7,34 @@ import pandas as pd
 
 from .client import client
 from .config import OPENAI_MODEL
-from .prompts import get_highlight_extraction_prompt, get_rewrite_list_prompt
+from .prompts import get_highlight_extraction_prompt, get_rewrite_list_prompt, get_combine_multi_intent_responses_prompt
 from .utils import _extract_bulleted_items, rewrite_long_lists_locally, parse_llm_json
+
+
+def combine_multi_intent_responses(responses: dict[str, str]) -> str:
+    """
+    Combine multiple response fragments into one coherent answer using GPT.
+    """
+    if not responses:
+        return ""
+    if len(responses) == 1:
+        _, value = next(iter(responses.items()))
+        return value
+
+    try:
+        resp = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[{"role": "user", "content": get_combine_multi_intent_responses_prompt(responses)}],
+            temperature=0,
+        )
+        combined = (resp.choices[0].message.content or "").strip()
+        if combined:
+            return combined
+    except Exception as e:
+        print(f"Warning: Response combination failed: {e}")
+
+    # Simple fallback: join with spaces
+    return " ".join(responses.values())
 
 
 def rewrite_long_node_lists_with_gpt(text: str) -> str:
