@@ -275,7 +275,7 @@ public static class ChartMQTTPublisher
                 chart_type = chart.chartType,
                 data_name = chart.dataName,
                 schema = vegaJson != null ? JToken.Parse(vegaJson) : null,
-                image_base64 = base64Image,
+                image_data = base64Image,
                 image_format = base64Image != null ? "png" : null
                 }
             };

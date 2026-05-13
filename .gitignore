@@ -36,6 +36,7 @@ interaction-manager/[Mm]emory[Cc]aptures/
 .vs/
 .vscode/
 .vsconfig
+.claude
 ExportedObj/
 
 # Porcupine wake word models
