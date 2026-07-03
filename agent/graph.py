@@ -79,7 +79,7 @@ def _run_tool_loop(state: AgentState , enriched_query:str, max_iterations: int =
         # Rebuild the system prompt each iteration so the LLM knows how many iterations remain
         msgs_for_llm[0] = SystemMessage(content=get_data_query_system_prompt(
             json.dumps(df_context),
-            iters_left,
+            iters_left - 1,
             data_name=state.get("data_name") or state.get("active_layer") or "the current dataset",
             x_field=state.get("x_field") or "x-axis",
             y_field=state.get("y_field") or "y-axis",

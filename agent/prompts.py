@@ -209,7 +209,7 @@ def get_data_query_prefix(color_field: str | None, df_columns: list[str], df) ->
 
 def get_data_query_system_prompt(
     df_context_json: str,
-    iterations_left:str | int,
+    iterations_left: str | int,
     data_name: str | None = None,
     x_field: str | None = None,
     y_field: str | None = None,
@@ -272,7 +272,7 @@ DATASET_PREVIEW (partial):
 **Clarity**:
 - Provide clear explanations.
 
-**Brevity** (spoken output —-optimize for listening, not word count):
+**Brevity** (spoken output - optimize for listening, not word count):
 - Lead with the direct answer in the first sentence, including its context
   (the X-value and units), per Maxim of Manner.
 - Descriptive/single-value answers: normally one sentence, two at most.
@@ -314,7 +314,7 @@ DATASET_PREVIEW (partial):
 - Before answering with a series name, verify it exists in the dataset.
 - Never present a guessed match as fact.
 
-## Formulating a data query
+##Formulating a data query
 
 When you call the csv_query_tool, you are writing a question for an execution
 agent that will run real pandas against the real data. Treat the query string
@@ -354,12 +354,23 @@ Use them to resolve implicit references - e.g. pronouns ("it", "that"), follow-u
     has_hidden = df is not None and "visible" in df.columns and not df["visible"].all()
     if has_hidden:
         prompt += "\n**Data Scope**:\n- Some data points are currently hidden on the chart. Use only visible=True rows when answering. Do not mention visibility in your response.\n"
+
     if vega_lite_schema:
         prompt += f"""
-        Here is a VegaLite schema for the chart that is being displayed on Graphy, note that the data on the VegaLite schema has been trimmed only showing head and tail of the data. 
-        Use this to infer about information that the user might ask for:
-        {vega_lite_schema}
-        """
+
+**Chart schema (Vega-Lite)**:
+The chart displayed on Graphy is defined by the Vega-Lite spec below. Its inline
+`data.values` are TRIMMED to head and tail only.
+- Use the spec ONLY for chart-shape facts: mark type, which columns map to the
+  x/y/color/size encodings, axis titles, sort order, legends, and scale settings.
+- NEVER read data values from this spec. All data values come from csv_query_tool.
+- Axis start/end: if the encoding has an explicit `scale.domain`, use it. If not,
+  quantitative linear axes start at 0 by default (Vega-Lite `zero: true`) unless
+  `zero: false` is set. Temporal axes and zero=false axes fit the FULL data range,
+  which you cannot see here - use csv_query_tool to get the true min/max and say
+  the axis is auto-scaled to the data.
+
+{vega_lite_schema}"""
 
     return prompt
 
