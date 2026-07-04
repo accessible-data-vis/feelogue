@@ -72,22 +72,27 @@ def _run_tool_loop(state: AgentState , enriched_query:str, max_iterations: int =
         "tail": tail,
     }
 
+    # Build the stable system prompt once - never mutate it so the prompt cache prefix stays intact.
+    stable_system_prompt = SystemMessage(content=get_data_query_system_prompt(
+        json.dumps(df_context),
+        data_name=state.get("data_name") or state.get("active_layer") or "the current dataset",
+        x_field=state.get("x_field") or "x-axis",
+        y_field=state.get("y_field") or "y-axis",
+        df=df,
+        vega_lite_schema=state.get("vega_lite_schema"),
+    ))
+    msgs_for_llm = [stable_system_prompt] + list(state.get("messages", [])) + [HumanMessage(content=enriched_query)]
+
     iters_left = max_iterations
-    # Build message list: system prompt (placeholder, filled in each loop iteration) + prior conversation + new query
-    msgs_for_llm = [SystemMessage(content="")] + list(state.get("messages", [])) + [HumanMessage(content=enriched_query)]
     for _ in range(max_iterations):
-        # Rebuild the system prompt each iteration so the LLM knows how many iterations remain
-        msgs_for_llm[0] = SystemMessage(content=get_data_query_system_prompt(
-            json.dumps(df_context),
-            iters_left - 1,
-            data_name=state.get("data_name") or state.get("active_layer") or "the current dataset",
-            x_field=state.get("x_field") or "x-axis",
-            y_field=state.get("y_field") or "y-axis",
-            df=df,
-            vega_lite_schema=state.get("vega_lite_schema")
-            
-        ))
-        response = _llm_with_tools.invoke(msgs_for_llm)
+        # Append the iteration budget as a short ephemeral message so the stable
+        # system prompt at position 0 never changes - prompt cache hits every turn.
+        if iters_left - 1 == 0:
+            budget_content = "WARNING: This is your FINAL iteration. You MUST answer now using only what you already know from prior tool results. Do NOT call any tools."
+        else:
+            budget_content = f"Iterations remaining: {iters_left - 1}. Break down the problem and evaluate each step carefully."
+        budget_msg = SystemMessage(content=budget_content)
+        response = _llm_with_tools.invoke(msgs_for_llm + [budget_msg])
         msgs_for_llm.append(response)
         if not response.tool_calls:
             return response.content or ""

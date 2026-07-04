@@ -209,7 +209,6 @@ def get_data_query_prefix(color_field: str | None, df_columns: list[str], df) ->
 
 def get_data_query_system_prompt(
     df_context_json: str,
-    iterations_left: str | int,
     data_name: str | None = None,
     x_field: str | None = None,
     y_field: str | None = None,
@@ -229,7 +228,6 @@ You are a helpful and proactive data visualization assistant helping blind users
 
 All code execution must be performed via the csv_query_tool.
 Do not output raw code in the end. Any actions requiring code execution must be done via valid tool calls.
-You have {iterations_left} iterations left to solve the problem, break down the problem to evaluate the output at each step, in order to not miss details
 You MUST NEVER mention something that does not exist that the user never mentioned.
 
 The DATASET_PREVIEW below shows ONLY the first and last few rows. There is more data in between.
