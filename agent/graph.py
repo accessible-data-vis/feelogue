@@ -68,6 +68,7 @@ def _run_tool_loop(state: AgentState , enriched_query:str, max_iterations: int =
         "columns": df_cols,
         "x_field": state.get("x_field"),
         "y_field": state.get("y_field"),
+        "color_field": state.get("color_field"),
         "head": head,
         "tail": tail,
     }
@@ -78,6 +79,7 @@ def _run_tool_loop(state: AgentState , enriched_query:str, max_iterations: int =
         data_name=state.get("data_name") or state.get("active_layer") or "the current dataset",
         x_field=state.get("x_field") or "x-axis",
         y_field=state.get("y_field") or "y-axis",
+        color_field=state.get("color_field"),
         df=df,
         vega_lite_schema=state.get("vega_lite_schema"),
     ))
