@@ -188,3 +188,83 @@ def rewrite_long_lists_locally(text: str, max_per_sentence: int = 2, min_trigger
 
     prose = ". ".join(chunks) + "."
     return f"{prefix} {prose}" if prefix else prose
+
+def format_messages_to_str(messages: list) -> str:
+    lines = []
+    message_count = 0
+    for msg in messages:
+        role = getattr(msg, "type", None)
+        content = getattr(msg, "content", "")
+        metadata = getattr(msg, "metadata", None) or {}
+
+        if role == "human":
+            intents = metadata.get("intent", [])
+            intent_str = f" [{', '.join(intents)}]" if intents else ""
+            lines.append(f"User{intent_str}: {content}")
+            message_count += 1
+
+        elif role == "ai":
+            if len(content) > 200:
+                content = content[:200] + "..."
+            lines.append(f"Assistant: {content}")
+            message_count += 1
+
+    if not lines:
+        return ""
+
+    return (
+        f"\nCONVERSATION HISTORY ({message_count} messages):\n"
+        + "\n".join(lines)
+        + "\n"
+    )
+
+def trim_schema_data(schema : dict, n : int=5) -> dict:
+    """
+    Keep only the first n and last n rows in schema["data"]["values"].
+    Annotates rows as head/tail and inserts a marker showing omitted rows.
+
+    Args:
+        schema (dict): schema containing data.values
+        n (int): number of rows to keep from head and tail
+
+    Returns:
+        dict: modified schema
+    """
+
+    from copy import deepcopy
+
+    if not schema:
+        return schema or {}
+    # Avoid changing original schema
+    trimmed_schema = deepcopy(schema)
+    for key in ("image_data", "image_format", "overview", "metadata"):
+        trimmed_schema.pop(key, None)
+    trimmed_schema.setdefault("data", {})
+
+    values = trimmed_schema["data"].get("values", [])
+
+    # Small datasets: keep everything
+    if len(values) <= 2 * n:
+        trimmed_schema["data"]["values"] = [
+            {"_sample_position": "all", **row}
+            for row in values
+        ]
+        return trimmed_schema
+
+    head = [
+        {"_sample_position": "head", **row}
+        for row in values[:n]
+    ]
+
+    tail = [
+        {"_sample_position": "tail", **row}
+        for row in values[-n:]
+    ]
+
+    removed = [{
+        "_sample_position": "removed",
+        "message": f"{len(values) - (2*n)} rows removed"
+    }]
+
+    trimmed_schema["data"]["values"] = head + removed + tail
+    return trimmed_schema

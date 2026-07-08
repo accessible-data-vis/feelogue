@@ -1,4 +1,32 @@
 
+LOAD_CHART_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "matches": {
+            "type": "array",
+            "description": "Charts that match the user's request, ordered by relevance (best match first). Empty if nothing matches.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "chart_id": {
+                        "type": "integer",
+                        "description": "The unique ID of the chart"
+                    },
+                    "chart_name": {
+                        "type": "string",
+                        "description": "The display name of the chart"
+                    }
+                },
+                "required": ["chart_id", "chart_name"],
+                "additionalProperties": False
+            }
+        }
+    },
+    "required": ["matches"],
+    "additionalProperties": False
+}
+
+
 # Formatted output for ChatGPT response
 INTENT_SCHEMA={
   "type": "object",
@@ -41,3 +69,4 @@ INTENT_SCHEMA={
   "required": ["intents", "has_deictic"],
   "additionalProperties": False
 }
+

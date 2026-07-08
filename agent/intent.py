@@ -22,22 +22,12 @@ def classify_query(user_query: str, has_image: bool = False, messages: list = No
             - intents: list of {type, query} dicts
             - has_deictic: boolean
     """
-    history = []
-    if messages:
-        for msg in messages[-6:]:
-            role = getattr(msg, "type", None)
-            content = getattr(msg, "content", "")
-            if role == "human":
-                history.append({"role": "user", "content": content})
-            elif role == "ai":
-                history.append({"role": "assistant", "content": content})
 
     resp = client.chat.completions.create(
         model=OPENAI_MODEL_CLASSIFIER,
         messages=[
             {"role": "system", "content": INTENT_CLASSIFIER_SYSTEM_PROMPT},
-            *history,
-            {"role": "user", "content": get_intent_classification_prompt(user_query, history=history)},
+            {"role": "user", "content": get_intent_classification_prompt(user_query, messages=messages[-6:])},
         ],
         temperature=0,
         response_format={
@@ -46,9 +36,7 @@ def classify_query(user_query: str, has_image: bool = False, messages: list = No
             "name": "intent_classification",
             "schema": INTENT_SCHEMA
         }
-    }
-
-    )
+    })
 
     raw = (resp.choices[0].message.content or "").strip()
     result = parse_llm_json(raw, fallback={"intents": [{"type":"general_question", "query":user_query}], "has_deictic": False})

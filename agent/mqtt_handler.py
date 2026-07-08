@@ -7,6 +7,7 @@ import ssl
 import time
 import paho.mqtt.client as mqtt_client
 
+from .utils import trim_schema_data
 from .context import update_dataframe_from_layer, get_current_config, set_image_data, set_chart_metadata_index
 from .graph import graph
 from .orchestrator import process_user_request
@@ -86,6 +87,7 @@ def on_message(client, userdata, msg):
         schema = rtd_data.get("schema") or {}
         encoding = schema.get("encoding") or {}
         patch["color_field"] = (encoding.get("color") or {}).get("field") or None
+        patch["vega_lite_schema"] = trim_schema_data(schema)
         overview = schema.get("overview")
         if overview:
             patch["chart_overview"] = overview

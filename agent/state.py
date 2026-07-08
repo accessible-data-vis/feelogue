@@ -32,6 +32,7 @@ class AgentState(TypedDict):
     image_format: Optional[str]
     dataset_version: int
     active_layer: Optional[str]
+    vega_lite_schema: Optional[str]
 
     # Follow-up / disambiguation — persisted so next turn sees pending state
     followup_stage: bool

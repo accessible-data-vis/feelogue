@@ -11,7 +11,7 @@ from .prompts import get_highlight_extraction_prompt, get_rewrite_list_prompt, g
 from .utils import _extract_bulleted_items, rewrite_long_lists_locally, parse_llm_json
 
 
-def combine_multi_intent_responses(responses: dict[str, str]) -> str:
+def combine_multi_intent_responses(responses: dict[str, str], query: str) -> str:
     """
     Combine multiple response fragments into one coherent answer using GPT.
     """
@@ -24,7 +24,7 @@ def combine_multi_intent_responses(responses: dict[str, str]) -> str:
     try:
         resp = client.chat.completions.create(
             model=OPENAI_MODEL,
-            messages=[{"role": "user", "content": get_combine_multi_intent_responses_prompt(responses)}],
+            messages=[{"role": "user", "content": get_combine_multi_intent_responses_prompt(responses=responses, query=query)}],
             temperature=0,
         )
         combined = (resp.choices[0].message.content or "").strip()
@@ -49,7 +49,7 @@ def rewrite_long_node_lists_with_gpt(text: str) -> str:
         resp = client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=[{"role": "user", "content": get_rewrite_list_prompt(text)}],
-            temperature=0.2,
+            temperature=0,
         )
         rewritten = (resp.choices[0].message.content or "").strip()
         if rewritten:
@@ -191,3 +191,4 @@ def _build_node(row, x_col: str, y_col: str) -> dict:
         "x": _to_native(row[x_col]),
         "y": _to_native(row[y_col]),
     }
+
