@@ -30,7 +30,6 @@ class AgentState(TypedDict):
     chart_metadata_index: Optional[dict]
     image_data: Optional[str]       # base64 PNG, persisted for repeated image_analysis calls
     image_format: Optional[str]
-    dataset_version: int
     active_layer: Optional[str]
     vega_lite_schema: Optional[str]
 

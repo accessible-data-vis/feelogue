@@ -11,7 +11,7 @@ from .schema import INTENT_SCHEMA
 
 
 
-def classify_query(user_query: str, has_image: bool = False, messages: list = None) -> dict:
+def classify_query(user_query: str, has_image: bool = False, messages: list = []) -> dict:
     """
     Classify user intent(s) AND detect deictic references in a single call.
     Passes the last 6 messages from conversation history so the classifier
@@ -27,7 +27,7 @@ def classify_query(user_query: str, has_image: bool = False, messages: list = No
         model=OPENAI_MODEL_CLASSIFIER,
         messages=[
             {"role": "system", "content": INTENT_CLASSIFIER_SYSTEM_PROMPT},
-            {"role": "user", "content": get_intent_classification_prompt(user_query, messages=messages[-6:])},
+            {"role": "user", "content": get_intent_classification_prompt(user_query, messages=messages)},
         ],
         temperature=0,
         response_format={

@@ -18,31 +18,28 @@ from .prompts import get_data_query_prefix
 csv_llm = ChatOpenAI(model=OPENAI_MODEL_ANALYSIS, temperature=0, stop=None)
 
 # Cache for the pandas agent executor -- rebuilt only when dataset or columns change.
-# dataset_version from state is the cache key: it increments on every
-# layer_data_update so a new DataFrame always gets a fresh executor.
+# A fresh pd.DataFrame is constructed on every layer_data_update (context.py),
+# so id(df) alone already changes whenever the dataset changes.
 _cached_executor = None
-_cached_version = None
 _cached_df_id = None
 _cached_columns = None
 
 
 def _get_executor(df, selected_data, columns_to_use: list, state: dict):
     """Return a pandas agent executor, reusing the cached one when nothing changed."""
-    global _cached_executor, _cached_version, _cached_df_id, _cached_columns
+    global _cached_executor, _cached_df_id, _cached_columns
 
-    version = state.get("dataset_version")
     df_id = id(df)
     cols = tuple(columns_to_use)
 
     if (
         _cached_executor is None
-        or version != _cached_version
         or df_id != _cached_df_id
         or cols != _cached_columns
     ):
         color_field = state.get("color_field")
         df_columns = state.get("df_columns", [])
-        print(f"Building pandas agent executor (version={version}, columns={cols})")
+        print(f"Building pandas agent executor (columns={cols})")
         _cached_executor = create_pandas_dataframe_agent(
             csv_llm,
             selected_data,
@@ -65,7 +62,6 @@ def _get_executor(df, selected_data, columns_to_use: list, state: dict):
                 if hasattr(t, "globals"):
                     t.globals = merged
                 break
-        _cached_version = version
         _cached_df_id = df_id
         _cached_columns = cols
     else:
@@ -105,7 +101,7 @@ def csv_query_tool(
         as "no such data", NOT as zero, and do not report it to the user verbatim.
         If no data is loaded or an error occurs: a plain-language message saying so.
     """
-    print("query inside csv query", query)
+    print("CSV Tool Query: \n", query)
     try:
         from .context import get_df
         df = get_df()

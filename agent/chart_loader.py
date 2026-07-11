@@ -178,7 +178,7 @@ def analyze_user_intent_with_context(user_query: str, state: dict) -> dict:
         model=OPENAI_MODEL,
         messages=[
             {"role": "system", "content": get_load_chart_system_prompt()},
-            {"role": "user", "content": get_load_chart_prompt(charts=charts, query=user_query, messages=messages[-6:])},
+            {"role": "user", "content": get_load_chart_prompt(charts=charts, query=user_query, messages=messages)},
         ],
         temperature=0,
         response_format={

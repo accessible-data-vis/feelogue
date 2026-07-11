@@ -8,7 +8,7 @@ import time
 import paho.mqtt.client as mqtt_client
 
 from .utils import trim_schema_data
-from .context import update_dataframe_from_layer, get_current_config, set_image_data, set_chart_metadata_index
+from .context import update_dataframe_from_layer, get_current_config, reset_context_keep_messages
 from .graph import graph
 from .orchestrator import process_user_request
 from .config import (
@@ -42,7 +42,6 @@ def on_message(client, userdata, msg):
 
     # Chart metadata index (boot message from Unity)
     if "chart_metadata_index" in data:
-        set_chart_metadata_index(data["chart_metadata_index"])
         graph.update_state(
             get_current_config(),
             {"chart_metadata_index": data["chart_metadata_index"]},
@@ -60,7 +59,6 @@ def on_message(client, userdata, msg):
         image_data = data.get("image_data")
         image_format = data.get("image_format") or "png"
         if image_data:
-            set_image_data(image_data, image_format)
             graph.update_state(get_current_config(), {
                 "image_data": image_data,
                 "image_format": image_format,
@@ -71,23 +69,25 @@ def on_message(client, userdata, msg):
     # RTD data (chart metadata + optional screenshot from renderer)
     if "rtd_data_for_agent" in data:
         rtd_data = data["rtd_data_for_agent"]
+        reset_context_keep_messages()
         patch = {
             "chart_type":  rtd_data.get("chart_type"),
             "data_name":   rtd_data.get("data_name"),
         }
-        # Only include image fields if actually present -- a None value would overwrite a valid
-        # image that arrived earlier (e.g. from a prior rtd_data_for_agent with an image).
+        # Only include image fields if actually present -- otherwise leave them cleared by the
+        # reset above until a chart_details message for this chart supplies one.
         image_data = rtd_data.get("image_data")
         image_format = rtd_data.get("image_format")
         if image_data:
-            set_image_data(image_data, image_format or "png")
             patch["image_data"] = image_data
             patch["image_format"] = image_format or "png"
 
         schema = rtd_data.get("schema") or {}
         encoding = schema.get("encoding") or {}
         patch["color_field"] = (encoding.get("color") or {}).get("field") or None
-        patch["vega_lite_schema"] = trim_schema_data(schema)
+        trimmed = trim_schema_data(schema)
+        schema_str = json.dumps(trimmed) if trimmed else None
+        patch["vega_lite_schema"] = schema_str
         overview = schema.get("overview")
         if overview:
             patch["chart_overview"] = overview

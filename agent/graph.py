@@ -4,6 +4,7 @@ Replaces the old orchestrator + minimal graph with a full StateGraph
 where every LLM call has access to persistent conversation history.
 """
 import json
+import time
 
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
 from langchain_openai import ChatOpenAI
@@ -408,7 +409,10 @@ def data_query_node(state: AgentState) -> dict:
         if best_nv:
             patch_referents["last_referent_node_values"] = best_nv
 
+    start_time = time.perf_counter()
     response_text = _run_tool_loop(state=state, enriched_query=enriched_query)
+    elapsed = time.perf_counter() - start_time
+    print(f"[data_query_node] resolved in {elapsed:.2f}s (intent={state.get('current_intent')!r})")
 
     print(f"response from tool loop: \n {response_text}")
     # Post-processing
@@ -504,19 +508,7 @@ def _build_graph():
     builder.add_edge("post_process_node", END)
 
     memory = MemorySaver()
-    return builder.compile(checkpointer=memory), memory
+    return builder.compile(checkpointer=memory)
 
 
-graph, _memory = _build_graph()
-
-
-def clear_graph_thread(thread_id: str) -> None:
-    """Remove all checkpoint data for a thread from MemorySaver."""
-    to_delete = [
-        k for k in _memory.storage
-        if isinstance(k, tuple) and len(k) > 0 and k[0] == thread_id
-    ]
-    for k in to_delete:
-        del _memory.storage[k]
-    if to_delete:
-        print(f"Cleared {len(to_delete)} checkpoint(s) for graph thread '{thread_id}'")
+graph = _build_graph()
