@@ -3,7 +3,6 @@ LangGraph graph for the Feelogue Agent.
 Replaces the old orchestrator + minimal graph with a full StateGraph
 where every LLM call has access to persistent conversation history.
 """
-import json
 import time
 
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
@@ -63,20 +62,33 @@ def _run_tool_loop(state: AgentState , enriched_query:str, max_iterations: int =
 
     # Build df_context for system prompt
     df_cols = state.get("df_columns") or []
-    head = df.head(6).to_dict(orient="records") if isinstance(df, pd.DataFrame) else []
-    tail = df.tail(6).to_dict(orient="records") if isinstance(df, pd.DataFrame) else []
-    df_context = {
-        "columns": df_cols,
-        "x_field": state.get("x_field"),
-        "y_field": state.get("y_field"),
-        "color_field": state.get("color_field"),
-        "head": head,
-        "tail": tail,
-    }
+    n = len(df) if isinstance(df, pd.DataFrame) else 0
 
+    if n <= 10:  # head + tail would cover everything anyway
+        sample = {
+            "note": "COMPLETE - these are ALL the rows; no hidden data",
+            "rows": df.to_dict(orient="records") if n else [],
+        }
+    else:
+        sample = {
+            "note": "TRIMMED - first and last 5 rows only; more data hidden in between",
+            "head": df.head(5).to_dict(orient="records"),
+            "tail": df.tail(5).to_dict(orient="records"),
+        }
+
+    df_context = {
+        "schema": {
+            "n_rows": n,
+            "columns": df_cols,
+            "x_field": state.get("x_field"),
+            "y_field": state.get("y_field"),
+            "color_field": state.get("color_field"),
+        },
+        "sample_rows": sample,
+    }
     # Build the stable system prompt once - never mutate it so the prompt cache prefix stays intact.
     stable_system_prompt = SystemMessage(content=get_data_query_system_prompt(
-        json.dumps(df_context),
+        df_context,
         data_name=state.get("data_name") or state.get("active_layer") or "the current dataset",
         x_field=state.get("x_field") or "x-axis",
         y_field=state.get("y_field") or "y-axis",
@@ -243,24 +255,23 @@ def image_analysis_node(state: AgentState) -> dict:
             "followup_stage": False,
         }
 
-    response = client.chat.completions.create(
+    response = client.responses.create(
         model=OPENAI_MODEL_IMAGE,
-        messages=[
-            {"role": "system", "content": IMAGE_ANALYSIS_SYSTEM_PROMPT},
+        instructions=IMAGE_ANALYSIS_SYSTEM_PROMPT,
+        input=[
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": state.get("current_query", "")},
+                    {"type": "input_text", "text": state.get("current_query", "")},
                     {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/{image_format};base64,{base64_image}"},
+                        "type": "input_image",
+                        "image_url": f"data:image/{image_format};base64,{base64_image}",
                     },
                 ],
             },
         ],
-        temperature=0,
     )
-    result_text = response.choices[0].message.content
+    result_text = response.output_text
     return {
         "intent_responses": {state["current_intent"]: result_text},
         "followup_stage": False,
@@ -298,6 +309,7 @@ def operations_node(state: AgentState) -> dict:
         y_col=y_col,
     )
     ack = build_operation_ack(rtd_cmd)
+    print(rtd_cmd)
     return {
         "intent_responses": {state["current_intent"]: ack},
         "rtd_command": rtd_cmd,
@@ -512,3 +524,4 @@ def _build_graph():
 
 
 graph = _build_graph()
+

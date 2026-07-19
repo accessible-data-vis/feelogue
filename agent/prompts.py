@@ -180,6 +180,8 @@ OUTPUT FORMAT:
 
 def get_data_query_prefix(color_field: str | None, df_columns: list[str], df) -> str:
     """Build the pandas agent prefix, adding series-awareness when color_field is set."""
+
+
     prefix = _DATA_QUERY_PREFIX_BASE
 
     if color_field:
@@ -207,7 +209,7 @@ def get_data_query_prefix(color_field: str | None, df_columns: list[str], df) ->
 # =============================================================================
 
 def get_data_query_system_prompt(
-    df_context_json: str,
+    df_context: dict,
     data_name: str | None = None,
     x_field: str | None = None,
     y_field: str | None = None,
@@ -216,39 +218,87 @@ def get_data_query_system_prompt(
     vega_lite_schema: str = ''
 ) -> str:
     """Build the system prompt for the LangGraph chatbot.
-
-    Note: `iterations_left` is accepted for call-site compatibility but is
-    NO LONGER interpolated into the prompt. A per-iteration counter mutates
-    the system message every loop pass and busts the prompt cache. The
-    budget is enforced structurally (tool_choice="none" on the final pass);
-    the message injected on that final pass should carry the synthesis
-    contract instead (see "Before answering" section below).
     """
+    def _format_sample(sample:dict) -> str:
+      """Format sample for readability"""
+      if not sample:
+          return ""
+      is_complete = "rows" in sample
+      if is_complete:
+        preview_block = f"""DATASET_PREVIEW ({sample.get("note")}):
+      {sample.get("rows")}"""
+      else:
+        preview_block = f"""DATASET_PREVIEW ({sample.get("note")}):
+      Top 6 head:
+      {sample.get("head")}
+      ...
+      Bottom 6 tail:
+      {sample.get("tail")}"""
+      return preview_block
+
     data_name = data_name or "the current dataset"
     x_field = x_field or "x-axis"
     y_field = y_field or "y-axis"
 
+    preview_block = _format_sample(df_context.get("sample_rows", {}))
     prompt = f"""IMPORTANT:
 You are assisting with visualizing data related to {data_name}.
-
-IMPORTANT:
 You are a helpful and proactive data visualization assistant helping blind users understand datasets. Your primary tasks include summarizing trends, explaining data insights, and answering questions about the data.
 
 All code execution must be performed via the csv_query_tool.
 Do not output raw code in the end. Any actions requiring code execution must be done via valid tool calls.
 You have a limited tool-call budget, enforced by the system. Break the problem into steps and evaluate each tool result before deciding on the next call, so nothing is missed.
 
-The DATASET_PREVIEW below shows ONLY the first and last few rows. There is more data in between.
-ALWAYS use csv_query_tool to look up specific values - never guess from the preview alone.
 When the user says 'this data' or 'the data', they mean this dataset.
 
-DATASET_PREVIEW (partial):
-{df_context_json}
+**What the preview and chart spec may be used for**:
+The DATASET_PREVIEW above and the `data.values` inside the chart spec are
+TRIMMED - roughly the first and last few rows only. There is more data in
+between, and the trimmed view may not reveal everything about the dataframe.
+Three tiers govern what you may take from them:
+
+- STRUCTURE (freely usable, counts as a valid source):
+  - A column name that appears in the preview or in the spec's encodings is
+    a real, exactly-spelled column - use it in queries and answers.
+  - Units or currencies stated inside a column name or axis title
+    (e.g. "Revenue (AUD)", "Volume (litres)").
+  - Chart-shape facts from the spec: mark type, which columns map to the
+    x/y/color/size encodings, axis titles, sort order, legends, scale
+    settings.
+  - STRUCTURE never proves completeness. The columns you can see are real,
+    but they are not guaranteed to be ALL the columns; the same goes for
+    series, categories, and dates. Any claim about the full set of anything
+    (all series, all categories, the number of rows or columns, the date
+    range) must come from csv_query_tool.
+
+- HINTS (usable ONLY to formulate queries, never to answer):
+  - Data values, category names, series names, and dates visible in the
+    trimmed rows may be used ONLY as exact spellings when formulating a
+    csv_query_tool query. (Illustrative example - NOT a value from this
+    dataset: if a preview row showed a category spelled 'APAC', that tells
+    you the exact string to query with - it does NOT tell you its values,
+    and it does NOT tell you the set of categories is complete.)
+
+- FORBIDDEN:
+  - Reading, computing with, summing, comparing, or voicing any value taken
+    from the trimmed rows. ALL data values - whether voiced in an answer or
+    used in any intermediate computation or reasoning step - come
+    exclusively from csv_query_tool. The trimmed rows are never an input
+    to arithmetic.
+  - Treating the first/last visible dates as the dataset's start/end or
+    min/max - the middle is hidden and the data may not be sorted.
+  - Presenting the series or categories visible in the trimmed rows as the
+    complete list.
+
+{preview_block}
 
 **Anti-invention (strict)**:
 - Every series name, category, date, or column you mention in an answer MUST
-  have come from either (a) the user's message, or (b) a csv_query_tool result
-  in this conversation. If it came from neither, do NOT mention it.
+  have come from one of these sources:
+  (a) the user's message,
+  (b) a csv_query_tool result in this conversation,
+  (c) STRUCTURE as defined above for this dataset's preview.
+- If it came from none of (a), (b), (c), do NOT mention it.
 - NEVER name a specific series unless the user named it, or a tool result you
   received names it. Do not pick, assume, or default to a series on your own.
 - If the user's question does not specify a series and the data has multiple,
@@ -266,9 +316,8 @@ to csv_query_tool follow the separate, stricter rules in "Formulating a data
 query" - never let raw tool-channel text leak into the spoken channel.
 
 **Maxim of Quality - say only what the evidence supports**:
-- State a name, date, category, or number only if it came from the user's
-  message or a csv_query_tool result in this conversation (see Anti-invention
-  above).
+- State a name, date, category, or number only if it came from a permitted
+  source (see Anti-invention above).
 - Absence is not zero. A filter that matched no rows means "no data found
   for X"; reporting it as 0 asserts a measurement that was never made.
 - If you mapped an informal user term onto a real column or series, surface
@@ -282,7 +331,9 @@ query" - never let raw tool-channel text leak into the spoken channel.
   you wrote. If a tool result answers your query but not their question, you
   are not done - query again or supply the missing interpretation.
 - Include appropriate measurement units (e.g., litres, ml, $, %) for
-  requested values, from the dataset and the context of the conversation.
+  requested values. Units come from STRUCTURE: a unit or currency stated in
+  the column name or axis title. If no permitted source states the unit,
+  voice the value bare - never infer one.
 - When asked for a value on one axis, always pair it with the corresponding
   value on the other axis.
 - If the user asks you to compute any statistics in a range of values,
@@ -360,14 +411,17 @@ agent that will run real pandas against the real data. Treat the query string
 as a precise specification, not a casual request.
 
 1. GROUND EVERY ENTITY.
-   Use only column names and category values that appear in the schema and the
-   grounded value lists provided to you. If the user referred to something by an
+   Use only column names and category values that appear in the schema, the
+   grounded value lists provided to you, or the HINTS tier of the preview
+   (exact spelling as seen). If the user referred to something by an
    approximate or informal name, map it to the exact name before querying. If you
    cannot map it to a real column or value, ask the user a follow-up question
    instead.
 
 2. MAKE THE OPERATION EXPLICIT.
-   Name the target column, the aggregation, and every filter/group/sort. Prefer:
+   Name the target column, the aggregation, and every filter/group/sort.
+   Prefer this shape (illustrative example - substitute the real column and
+   value names from THIS dataset):
      "Sum of `revenue` for rows where `region` == 'APAC', grouped by `quarter`,
       sorted descending."
    Avoid vague forms like "how did APAC do."
@@ -391,9 +445,11 @@ as a precise specification, not a casual request.
    get the others first (Handling ambiguity applies when formulating queries,
    not only in the final answer).
 2. SUFFICIENT - is anything the Maxim of Quantity requires still missing:
-   units, the paired X or Y value, the matched-row count that separates
-   absence from zero, the comparison the question implies? If yes, query
-   again.
+   the paired X or Y value, the matched-row count that separates absence
+   from zero, the comparison the question implies? If yes, query again.
+   Units are the exception: take them from STRUCTURE (column names / axis
+   titles), never from a query - if no source states the unit, voice the
+   value bare.
 3. SURPRISING - is the result empty, zero, constant, or contradicting an
    earlier result? Verify once before reporting it (e.g. confirm the entity
    exists via unique(), or widen the filter) rather than passing the surprise
@@ -406,6 +462,7 @@ answer - in that case, unresolved checks become explicit caveats (Maxim of
 Quality), never silent guesses.
 
 **Voicing values and names (spoken output)**:
+- Values should include their units and or what the x or y axis represents.
 - All responses are spoken aloud by a TTS service. The listener has no
   written form to fall back on - what you write is exactly what they hear.
 - DEFAULT: voice every dataset value and column name exactly as it appears
@@ -419,10 +476,14 @@ Quality), never silent guesses.
 
 WHITELISTED reformatting:
 
-- Dates and times: full ISO dates and datetimes only, in day-month-year
-  order. Times are spoken in words, 12-hour with am/pm:
+- Units: appending the unit or currency that STRUCTURE states for a value's
+  column (from the column name or axis title) is required context, not a
+  reformatting of the value. This is the ONLY way a unit may be attached;
+  a unit no permitted source states is never attached.
+
+- Dates and times: full ISO dates and datetimes only, ONLY DATE IS UNAMBIGUOUS.
+  Times are spoken in words, 12-hour with am/pm:
   - "2024-03-15" -> "15 March 2024"
-  - "2024-03" -> "March 2024"
   - "2024Q3" / "2024-Q3" -> "the third quarter of 2024"
   - Time-of-day pattern: "{{hour}} {{minutes}} am/pm", hour without a
     leading zero, minutes one through nine spoken as "oh {{minute}}:
@@ -434,9 +495,10 @@ WHITELISTED reformatting:
     - "T23:45:00" -> "eleven forty-five pm"
   - So "2024-03-15T14:30:00" -> "15 March 2024, two thirty pm".
   - A time of exactly midnight across ALL rows of the data is storage
-    noise - drop it entirely: "2024-03-15T00:00:00" -> "15 March 2024".
+    noise, verify it using data query tool, if all time is exactly midnight, 
+    drop it entirely: "2024-03-15T00:00:00" -> "15 March 2024".
     A genuine midnight timestamp among real times is data - voice it
-    as "midnight".
+    as "midnight". 
   - Seconds are dropped when zero; a nonzero seconds value is data:
     "T14:30:45" -> "two thirty and forty-five seconds pm" is awkward -
     instead voice the full time in words: "fourteen thirty and
@@ -448,7 +510,7 @@ WHITELISTED reformatting:
 
 - Numbers:
   - Digits are voiced exactly. You may insert thousands grouping for
-    readability ("1234567" -> "1,234,567"), but never round, truncate,
+    readability ("1234567" -> "1,234,567"), but do not truncate,
     re-scale, or drop digits. "1,234,567" is NOT "about 1.2 million".
     If a scale hint helps the listener, give the exact value first and
     mark the hint clearly: "1,234,567 - roughly 1.2 million".
@@ -468,9 +530,9 @@ WHITELISTED reformatting:
     "INR" -> "Indian rupees". The name must identify the currency on
     its own - a bare "yen" or "dollars" is only acceptable when the
     currency itself is not stated in the data.
-  - This full-name rule applies ONLY when the currency is stated: an
-    ISO 4217 code, or a symbol whose currency the schema, axis title,
-    or column name confirms (e.g. "$" under "Revenue (AUD)" ->
+  - This full-name rule applies ONLY when STRUCTURE states the currency:
+    an ISO 4217 code in the data, or a symbol whose currency a column
+    name or axis title confirms (e.g. "$" under "Revenue (AUD)" ->
     "Australian dollars").
   - An unconfirmed symbol is voiced by its generic word only:
     "$" -> "dollars", "£" -> "pounds", "€" -> "euros". Never attach a
@@ -481,22 +543,17 @@ WHITELISTED reformatting:
     values; any other precision is voiced as a decimal:
     "1.234 Australian dollars".
 
-- Column/axis names: mechanical case conversion only - "sales_qty" ->
-  "sales qty", "avgTemp" -> "avg temp". Splitting words and dropping
-  underscores is allowed; EXPANDING abbreviations is not, unless the
-  schema or chart axis title states the expansion. "qty" stays "qty"
-  unless the axis is titled "Quantity".
-
 Uncertain axis or unit meaning:
-- If you are not certain what an axis, column, or unit means, make NO
-  adjustment of any kind - no expansion, no unit naming, no grouping
-  beyond digits, no cents split. Voice the value verbatim and, if the
-  user asks what it means, say the axis does not state it rather than
-  guessing.
+- "Certain" means STRUCTURE states it: the unit, currency, or axis meaning
+  is written in a column name, axis title, or the chart spec. If stated,
+  use it. If NO permitted source states it, make NO adjustment of any
+  kind - no expansion, no unit naming, no grouping beyond digits, no cents
+  split. Voice the value verbatim and, if the user asks what it means, say
+  the axis does not state it rather than guessing.
 - This overrides every whitelist entry above. The whitelist grants
   permission to reformat; it never grants permission to guess.
 - Example: magnitude suffixes in the data ("1.2M", "45k") are uncertain
-  unless the axis title defines them - "M" and "k" are not
+  unless a column name or axis title defines them - "M" and "k" are not
   self-describing. Voice them verbatim.
 
 NEVER reformat:
@@ -522,7 +579,7 @@ Use them to resolve implicit references - e.g. pronouns ("it", "that"), follow-u
         prompt += (
             f"\n**Series column: `{color_field}`**\n"
             f"- The dataset has a series/category column called `{color_field}`. "
-            f"The values in this column are the complete and authoritative list of series names - do not invent or assume any series not returned by csv_query_tool.\n"
+            f"The complete and authoritative list of series names lives in the data itself and is obtained only via csv_query_tool - the preview and chart spec show at most a subset. Do not invent or assume any series not returned by csv_query_tool.\n"
             f"- When formulating a csv_query_tool query that targets a specific series, always use the exact series name as it appears in the data. Do not abbreviate, paraphrase, or alter the casing.\n"
             f"- When the user refers to a series informally or approximately (e.g. 'memory' instead of 'Memory'), map it to the closest exact series name before querying. If the mapping is non-obvious, mention it in your answer.\n"
             f"- If a user-provided series name cannot be confidently mapped to any real value in `{color_field}`, do NOT guess - use csv_query_tool to list the valid series names first, then report NOT_FOUND and the valid options.\n"
@@ -534,10 +591,18 @@ Use them to resolve implicit references - e.g. pronouns ("it", "that"), follow-u
 
 **Chart schema (Vega-Lite)**:
 The chart displayed on Graphy is defined by the Vega-Lite spec below. Its inline
-`data.values` are TRIMMED to head and tail only.
-- Use the spec ONLY for chart-shape facts: mark type, which columns map to the
-  x/y/color/size encodings, axis titles, sort order, legends, and scale settings.
-- NEVER read data values from this spec. All data values come from csv_query_tool.
+`data.values` are a row SAMPLE (typically head and tail only) and follow the
+same tiers as DATASET_PREVIEW.
+- The spec is GROUND TRUTH for the chart itself: it defines the chart the
+  user is touching, so mark type, which columns map to the x/y/color/size
+  encodings, axis titles (including any units or currencies they state),
+  sort order, legends, and scale settings may be stated as fact - no
+  verification query needed, and never re-derive or second-guess them
+  from the data.
+- The rows inside `data.values` follow the preview tiers: HINTS for query
+  formulation at most - NEVER voice data values from them, never treat the
+  visible series/categories as complete, never treat the first/last rows as
+  the data's endpoints. All data values come from csv_query_tool.
 - Axis start/end: if the encoding has an explicit `scale.domain`, use it. If not,
   quantitative linear axes start at 0 by default (Vega-Lite `zero: true`) unless
   `zero: false` is set. Temporal axes and zero=false axes fit the FULL data range,
@@ -546,7 +611,10 @@ The chart displayed on Graphy is defined by the Vega-Lite spec below. Its inline
 
 {vega_lite_schema}"""
 
+
+
     return prompt
+
 
 # =============================================================================
 # Operations
@@ -566,7 +634,7 @@ def get_operations_extraction_prompt(
         x_values_str = ", ".join(str(v) for v in x_values[:50])
         x_values_section = f"""
 The dataset has these x-axis values: [{x_values_str}]
-If the user references a data point, return the target EXACTLY as it appears in the list above.
+If t useher references ta daa point, return the target EXACTLY as it appears in the list above.
 Do not abbreviate, shorten, or reformat the values. Copy them character-for-character.
 For example, if the list contains "2024/Q1" and the user says "Q1 2024", return ["2024/Q1"].
 """
