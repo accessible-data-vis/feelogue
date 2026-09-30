@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEditor;
 #endif
 
+/// <summary>Moves a fingertip collider with the tracked finger and snaps it onto the pin surface.</summary>
 [RequireComponent(typeof(Collider), typeof(Rigidbody))]
 public class FingerSnapper : MonoBehaviour
 {
@@ -40,7 +41,7 @@ public class FingerSnapper : MonoBehaviour
     public Leap.Chirality handedness = Leap.Chirality.Right;
     public int fingerIndex = 1;
 
-    // ───────── internal ─────────
+    // ===== Internal =====
     private Rigidbody _rb;
     private int _pinsMask, _selfMask;
     private Vector3 _planeN, _planeP0;
@@ -82,7 +83,7 @@ public class FingerSnapper : MonoBehaviour
 
     void OnEnable()
     {
-        // Delay rebuild to ensure RTDAligner has run
+        // Delay the rebuild until RTDAligner has run
         if (Application.isPlaying)
             Invoke(nameof(RebuildBedPlane), 0.1f);
     }
@@ -100,20 +101,14 @@ public class FingerSnapper : MonoBehaviour
             return;
         }
 
-        // Simplified: use anchor's up vector directly (no flipping needed with correct setup)
-        //_planeN = RTDAnchor.up;
-
         // Force bed normal to world up (pins are flat, so plane should be horizontal)
         _planeN = Vector3.up;
 
-        // Use anchor position directly (no child lookup needed)
-        //_planeP0 = RTDAnchor.position;    // 16th oct - change
+        // Plane sits at pin-top height above the anchor
         float pinHeight = 0.007f;  // 7mm - matches pin CapsuleCollider height
         _planeP0 = RTDAnchor.position + Vector3.up * pinHeight;
 
-        //Debug.Log($"RTDAnchor World Rotation: {RTDAnchor.rotation.eulerAngles}");
-
-        Debug.Log($"[{name}] Bed plane rebuilt: normal={_planeN}, origin={_planeP0}, world rotation={RTDAnchor.rotation.eulerAngles}");
+        AppLog.Detail(LogArea.Device, $"[{name}] Bed plane rebuilt: normal={_planeN}, origin={_planeP0}, world rotation={RTDAnchor.rotation.eulerAngles}");
     }
 
     void FixedUpdate()
@@ -146,7 +141,7 @@ public class FingerSnapper : MonoBehaviour
         Vector3 surfPoint = haveHit ? hit.point : raw - Vector3.Dot(raw - _planeP0, _planeN) * _planeN;
         Vector3 surfNormal = haveHit ? hit.normal : _planeN;
 
-        // FILTER: reject side hits (check normal alignment)
+        // Filter: reject side hits (check normal alignment)
         if (haveHit)
         {
             float cosThresh = Mathf.Cos(maxNormalAngle * Mathf.Deg2Rad);
@@ -154,11 +149,10 @@ public class FingerSnapper : MonoBehaviour
             if (ndot < cosThresh)
             {
                 haveHit = false;
-                //Debug.Log($"[{name}] Rejected side hit: ndot={ndot:F3}");
             }
         }
 
-        // FILTER: reject hits too far laterally from finger tip
+        // Filter: reject hits too far laterally from finger tip
         if (haveHit)
         {
             Vector3 toHit = surfPoint - raw;
@@ -166,7 +160,6 @@ public class FingerSnapper : MonoBehaviour
             if (lateral > maxLateralFromTip)
             {
                 haveHit = false;
-                //Debug.Log($"[{name}] Rejected lateral hit: {lateral * 1000f:F2}mm");
             }
         }
 
@@ -189,19 +182,17 @@ public class FingerSnapper : MonoBehaviour
         _rb.MovePosition(newPos);
     }
 
-    // Called by PositionReportNew when touch starts
+    // Called by PositionReport when a touch starts
     public void OnTouchStart()
     {
         isTouchingPin = true;
         frozenPosition = _rb.position;
-        //Debug.Log($"[{name}] OnTouchStart called - isTouchingPin = TRUE");
     }
 
-    // Called by PositionReportNew when touch ends
+    // Called by PositionReport when a touch ends
     public void OnTouchEnd()
     {
         isTouchingPin = false;
-        //Debug.Log($"[{name}] OnTouchEnd called - isTouchingPin = FALSE");
     }
 
     #if UNITY_EDITOR

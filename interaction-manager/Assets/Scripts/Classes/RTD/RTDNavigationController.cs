@@ -14,7 +14,6 @@ public class RTDNavigationController
 
     // ===== Dependencies =====
     private readonly InterfaceGraphVisualizer _graphVisualizer;
-    private Func<int, bool> _isDataPointVisibleCallback;
 
     // ===== State =====
     private List<NodeComponent> _xAxisNodes = new List<NodeComponent>();
@@ -36,17 +35,18 @@ public class RTDNavigationController
     //   Line/bar checked:   series-first order (all of series A in X order, then series B, …).
     private bool _interleavedNavigation = false;
 
-    // Current chart type — only scatter ("point") uses interleaved navigation.
+    // Current chart type: only scatter ("point") uses interleaved navigation.
     private string _chartType = "";
 
     // ===== Events =====
     public event Action<NodeComponent, List<NodeComponent>, List<float>> NavigationChanged = delegate { };
-    public event Action<int> AutoPanToDataPoint = delegate { };
 
     // ===== Properties =====
     public NavContext CurrentContext => _currentNavContext;
     public Vector2Int? CurrentlyHighlightedPoint => _currentlyHighlightedPoint;
     public bool IsHighlightFromNavigation => _highlightFromNavigation;
+    public long HighlightAnchoredAtMs => _highlightAnchoredAtMs;
+    private long _highlightAnchoredAtMs;
     public int CurrentXAxisIndex => _currentXAxisIndex;
     public int CurrentYAxisIndex => _currentYAxisIndex;
     public int CurrentDataMarkIndex => _currentDataMarkIndex;
@@ -59,11 +59,6 @@ public class RTDNavigationController
     }
 
     // ===== Public Methods =====
-
-    public void SetVisibilityCallback(Func<int, bool> callback)
-    {
-        _isDataPointVisibleCallback = callback;
-    }
 
     /// <summary>
     /// Controls navigation sort order (see _interleavedNavigation field for full table).
@@ -125,7 +120,7 @@ public class RTDNavigationController
 
         _currentDataMarkIndex = 0;
         NavigateToCurrentDataPoint();
-        Debug.Log("Navigation reset to start.");
+        AppLog.Detail(LogArea.Buttons, "Navigation reset to start.");
     }
 
     /// <summary>
@@ -140,7 +135,7 @@ public class RTDNavigationController
         if (context.HasValue)
         {
             SetContextAndIndex(context.Value, index);
-            Debug.Log($"Set navigation index to {context.Value} {index + 1} at ({coord.x},{coord.y})");
+            AppLog.Detail(LogArea.Buttons, $"Set navigation index to {context.Value} {index + 1} at ({coord.x},{coord.y})");
         }
         else
         {
@@ -161,7 +156,7 @@ public class RTDNavigationController
         if (context.HasValue)
         {
             SetContextAndIndex(context.Value, index);
-            Debug.Log($"Snapped to {context.Value} {index + 1} at ({coord.x},{coord.y})");
+            AppLog.Detail(LogArea.Buttons, $"Snapped to {context.Value} {index + 1} at ({coord.x},{coord.y})");
             NavigateToCurrentDataPoint(matchingNodes, probabilities);
         }
         else
@@ -173,20 +168,12 @@ public class RTDNavigationController
     public void NavigateNextDataPoint()
     {
         AdvanceIndex(+1);
-
-        if (CheckAndAutoPanToVisibleNode())
-            return;
-
         NavigateToCurrentDataPoint();
     }
 
     public void NavigatePrevDataPoint()
     {
         AdvanceIndex(-1);
-
-        if (CheckAndAutoPanToVisibleNode())
-            return;
-
         NavigateToCurrentDataPoint();
     }
 
@@ -209,7 +196,7 @@ public class RTDNavigationController
         _currentNavContext = NavContext.DataMark;
         _currentDataMarkIndex = index;
         NavigateToCurrentDataPoint();
-        Debug.Log($"Navigated to data point {index + 1}/{_dataPointNodes.Count}");
+        AppLog.Detail(LogArea.Buttons, $"Navigated to data point {index + 1}/{_dataPointNodes.Count}");
     }
 
     public void NavigateToDataPointByValue(string xField, object xValue, string yField, object yValue)
@@ -224,7 +211,8 @@ public class RTDNavigationController
 
         int index = _dataPointNodes.FindIndex(node =>
         {
-            if (node.values == null) return false;
+            // Only nodes on the display: off-screen nodes have no pin (xy == null).
+            if (node.values == null || !node.visibility || node.xy == null || node.xy.Length < 2) return false;
 
             bool xMatch = node.values.TryGetValue(xField, out var nodeX) &&
                           nodeX.ToString() == xValue.ToString();
@@ -243,7 +231,7 @@ public class RTDNavigationController
             _currentNavContext = NavContext.DataMark;
             _currentDataMarkIndex = index;
             NavigateToCurrentDataPoint();
-            Debug.Log($"Found and navigated to point with {xField}={xValue}, {yField}={yValue} at viewport index {index}");
+            AppLog.Detail(LogArea.Buttons, $"Found and navigated to point with {xField}={xValue}, {yField}={yValue} at window index {index}");
         }
         else
         {
@@ -260,6 +248,7 @@ public class RTDNavigationController
         _currentNavContext = NavContext.DataMark;
         _currentlyHighlightedPoint = null;
         _highlightFromNavigation = false;
+        _navigatedNode = null;
     }
 
     // ===== Internal Methods =====
@@ -340,7 +329,7 @@ public class RTDNavigationController
     private void LogNodeSearchFailure(Vector2Int coord)
     {
         Debug.LogWarning($"No node found at ({coord.x},{coord.y})");
-        Debug.Log($"Total data point nodes: {_dataPointNodes.Count}");
+        AppLog.Detail(LogArea.Buttons, $"Total data point nodes: {_dataPointNodes.Count}");
 
         if (_dataPointNodes.Count > 0)
         {
@@ -350,10 +339,10 @@ public class RTDNavigationController
                 if (n.xy != null && n.xy.Length >= 2 && n.xy[0] == coord.x)
                 {
                     nodesAtColumn++;
-                    Debug.Log($"Node {n.id} at col {coord.x}: xy=({n.xy[0]},{n.xy[1]}), barCoords.Count={n.barCoordinates?.Count ?? 0}");
+                    AppLog.Detail(LogArea.Buttons, $"Node {n.id} at col {coord.x}: xy=({n.xy[0]},{n.xy[1]}), barCoords.Count={n.barCoordinates?.Count ?? 0}");
                 }
             }
-            Debug.Log($"Found {nodesAtColumn} nodes at column {coord.x}");
+            AppLog.Detail(LogArea.Buttons, $"Found {nodesAtColumn} nodes at column {coord.x}");
         }
     }
 
@@ -362,6 +351,7 @@ public class RTDNavigationController
         _xAxisNodes.Clear();
         _yAxisNodes.Clear();
         _dataPointNodes.Clear();
+        int offScreen = 0;
 
         var nodes = _graphVisualizer?.GetNodes();
         if (nodes == null)
@@ -381,7 +371,13 @@ public class RTDNavigationController
             else if (node.type.Contains("y-axis"))
                 _yAxisNodes.Add(node);
             else if (node.type.Contains("data-mark") || node.type.Contains("data-point"))
-                _dataPointNodes.Add(node);
+            {
+                // Points outside the window have no pins, so they can't be stepped onto.
+                if (node.visibility && node.xy != null && node.xy.Length >= 2)
+                    _dataPointNodes.Add(node);
+                else
+                    offScreen++;
+            }
         }
 
         // Sort axis nodes by position
@@ -397,9 +393,7 @@ public class RTDNavigationController
 
         ApplyNavigationSort();
 
-        int visibleCount = _dataPointNodes.Count(n => n.visibility);
-        int hiddenCount = _dataPointNodes.Count(n => !n.visibility);
-        Debug.Log($"Extracted: {_xAxisNodes.Count} x-axis, {_yAxisNodes.Count} y-axis, {_dataPointNodes.Count} data-points ({visibleCount} visible, {hiddenCount} hidden)");
+        AppLog.Detail(LogArea.Buttons, $"Extracted: {_xAxisNodes.Count} x-axis, {_yAxisNodes.Count} y-axis, {_dataPointNodes.Count} data-points ({offScreen} off-screen skipped)");
     }
 
     /// <summary>
@@ -409,7 +403,7 @@ public class RTDNavigationController
     /// Scatter, checked:   visible bottom-to-top (yPixelRow desc, xPixelCol asc); hidden in global-ID order.
     ///
     /// Line/bar, unchecked: global renderer ID order (data-table order).
-    /// Line/bar, checked:   series-first — all nodes in series A (by xPixelCol asc), then series B, etc.
+    /// Line/bar, checked:   series-first: all nodes in series A (by xPixelCol asc), then series B, etc.
     ///                       Series order determined by first appearance in global-ID order.
     /// </summary>
     private void ApplyNavigationSort()
@@ -509,10 +503,23 @@ public class RTDNavigationController
         int y = node.xy[1];
         _currentlyHighlightedPoint = new Vector2Int(x, y);
         _highlightFromNavigation = true;
+        // Keep the point itself: a double tap moves the cursor, but this point stays
+        // highlighted and is still sent to the agent.
+        _navigatedNode = node;
+        // Sent with the highlight so the agent can tell which referent is newest.
+        _highlightAnchoredAtMs = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
-        Debug.Log($"Navigating to {_currentNavContext}: {node.id} at ({x},{y}), visibility={node.visibility}");
+        AppLog.Detail(LogArea.Buttons, $"Navigating to {_currentNavContext}: {node.id} at ({x},{y}), visibility={node.visibility}");
         NavigationChanged?.Invoke(node, nodes, probabilities);
     }
+
+    /// <summary>The node navigation is on, or null. Use the node, not its pin: several
+    /// nodes can share a pin.</summary>
+    public NodeComponent CurrentHighlightedNode =>
+        _highlightFromNavigation && _navigatedNode != null ? _navigatedNode : null;
+
+    // Set when navigation highlights a point, cleared with the navigation.
+    private NodeComponent _navigatedNode;
 
     private NodeComponent GetCurrentNode()
     {
@@ -532,55 +539,6 @@ public class RTDNavigationController
                 break;
         }
         return null;
-    }
-
-    private bool CheckAndAutoPanToVisibleNode()
-    {
-        if (_currentNavContext != NavContext.DataMark)
-            return false;
-
-        if (_currentDataMarkIndex < 0 || _currentDataMarkIndex >= _dataPointNodes.Count)
-            return false;
-
-        NodeComponent currentNode = _dataPointNodes[_currentDataMarkIndex];
-
-        int? globalIndex = ParseGlobalIndex(currentNode.id);
-        if (!globalIndex.HasValue)
-        {
-            Debug.LogWarning($"Could not extract global index from node ID: {currentNode.id}");
-            return false;
-        }
-
-        Debug.Log($"Checking node at list index {_currentDataMarkIndex}: id={currentNode.id}, globalIndex={globalIndex.Value}, visibility={currentNode.visibility}");
-
-        // Check if node has invalid coordinates (stale node from previous render)
-        bool hasValidCoordinates = currentNode.xy != null && currentNode.xy.Length >= 2 && !(currentNode.xy[0] == 0 && currentNode.xy[1] == 0);
-
-        if (!hasValidCoordinates)
-        {
-            Debug.Log($"Node {currentNode.id} has invalid coordinates - triggering auto-pan (globalIndex={globalIndex.Value})");
-            AutoPanToDataPoint?.Invoke(globalIndex.Value);
-            return true;
-        }
-
-        // Check if data point is visible using callback
-        if (_isDataPointVisibleCallback != null)
-        {
-            if (!_isDataPointVisibleCallback(globalIndex.Value))
-            {
-                Debug.Log($"Auto-panning to hidden data point {globalIndex.Value} (list index {_currentDataMarkIndex})");
-                AutoPanToDataPoint?.Invoke(globalIndex.Value);
-                return true;
-            }
-        }
-        else if (!currentNode.visibility)
-        {
-            Debug.Log($"Auto-panning to hidden data point {globalIndex.Value} (using node.visibility fallback)");
-            AutoPanToDataPoint?.Invoke(globalIndex.Value);
-            return true;
-        }
-
-        return false;
     }
 
     /// <summary>

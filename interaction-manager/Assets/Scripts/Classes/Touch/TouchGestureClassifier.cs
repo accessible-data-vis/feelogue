@@ -101,7 +101,7 @@ public class TouchGestureClassifier
     /// </summary>
     public void ResetVelocityTracking()
     {
-        ClassifyByDisplacement();  // always run — can promote Tap→Swipe or Unknown→Swipe
+        ClassifyByDisplacement();  // always run: can promote Tap→Swipe or Unknown→Swipe
         if (_lastMotion == MotionType.Unknown)
             _lastMotion = MotionType.Tap;  // final fallback
 
@@ -179,11 +179,11 @@ public class TouchGestureClassifier
         {
             _recordedDurations.Add(duration);
             _tapsRecorded++;
-            UnityEngine.Debug.Log($"[TRAIN] Tap #{_tapsRecorded}: {duration:F3}s");
+            AppLog.Info(LogArea.Touch, $"[TRAIN] Tap #{_tapsRecorded}: {duration:F3}s");
 
             if (_tapsRecorded >= TRAINING_TAP_TARGET)
             {
-                UnityEngine.Debug.Log($"[TRAIN COMPLETE] min={_recordedDurations.Min():F3}s  max={_recordedDurations.Max():F3}s");
+                AppLog.Info(LogArea.Touch, $"[TRAIN COMPLETE] min={_recordedDurations.Min():F3}s  max={_recordedDurations.Max():F3}s");
                 _trainingMode = false;
             }
             return false; // Don't process as real tap during training
@@ -292,12 +292,12 @@ public class TouchGestureClassifier
         if (lateralDisp >= SWIPE_THRESHOLD)
         {
             _lastMotion = MotionType.Swipe;
-            UnityEngine.Debug.Log($"[Displacement] Promoted to Swipe (lateral: {lateralDisp:F4}m)");
+            AppLog.Detail(LogArea.Touch, $"[Displacement] Promoted to Swipe (lateral: {lateralDisp:F4}m)");
         }
         else if (_lastMotion == MotionType.Unknown)
         {
             _lastMotion = MotionType.Tap;
-            UnityEngine.Debug.Log($"[Displacement] Classified as Tap (lateral: {lateralDisp:F4}m)");
+            AppLog.Detail(LogArea.Touch, $"[Displacement] Classified as Tap (lateral: {lateralDisp:F4}m)");
         }
         // else: keep existing classification (Tap stays Tap for small-displacement taps)
     }

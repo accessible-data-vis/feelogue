@@ -1,5 +1,11 @@
 """
 Touch and highlight context handling.
+
+Referent info lists are (timestamp_ms, text) pairs: Unity stamps every anchored
+referent (touchdata.touch_timestamp, highlighted_context.highlight_timestamp),
+and the enrichment orders them newest-first so the model can resolve singular
+deixis ("this") to the latest referent while plural ("these") sees all of them.
+A missing timestamp ranks oldest.
 """
 from typing import Tuple, List, Dict
 
@@ -7,12 +13,27 @@ from typing import Tuple, List, Dict
 TOUCH_PROBABILITY_THRESHOLD = 0.2
 
 
-def collect_touch_nodes(touchdata: dict) -> Tuple[List[str], Dict]:
+def _timestamp_of(container: dict, key: str) -> float:
+    try:
+        return float(container.get(key) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _described_values(node: dict) -> dict:
+    """A node's chart fields only, for the text the model reads. The row id stays
+    in the node for highlight resolution but is never in text the model could speak."""
+    nv = node.get("node_values", {}) or {}
+    return {k: v for k, v in nv.items()
+            if k != "_id" and not str(k).endswith(("_start", "_end", "_rtd_index"))}
+
+
+def collect_touch_nodes(touchdata: dict) -> Tuple[List[Tuple[float, str]], Dict]:
     """
     Extract touched nodes from touch data.
 
     Returns:
-        Tuple of (human-readable info list, nodes dict)
+        Tuple of ((timestamp_ms, human-readable info) list, nodes dict)
     """
     info, nodes_out = [], {}
     if not isinstance(touchdata, dict):
@@ -22,6 +43,7 @@ def collect_touch_nodes(touchdata: dict) -> Tuple[List[str], Dict]:
         block = touchdata.get(side)
         if not isinstance(block, dict):
             continue
+        ts = _timestamp_of(block, "touch_timestamp")
 
         nodes = block.get("nodes", {}) or {}
         for node_id, node in nodes.items():
@@ -40,27 +62,28 @@ def collect_touch_nodes(touchdata: dict) -> Tuple[List[str], Dict]:
             else:
                 t = "Unknown"
 
-            nv = node.get("node_values", {}) or {}
-            info.append(
+            nv = _described_values(node)
+            info.append((ts,
                 f"{side} - {t}: [{', '.join(map(str, nv.keys()))}], "
                 f"Values: [{', '.join(map(str, nv.values()))}]"
-            )
+            ))
             nodes_out[node_id] = node
 
     return info, nodes_out
 
 
-def collect_highlight_nodes(highlighted_context: dict) -> Tuple[List[str], Dict]:
+def collect_highlight_nodes(highlighted_context: dict) -> Tuple[List[Tuple[float, str]], Dict]:
     """
     Extract highlighted nodes from highlight context.
 
     Returns:
-        Tuple of (human-readable info list, nodes dict)
+        Tuple of ((timestamp_ms, human-readable info) list, nodes dict)
     """
     info, nodes_out = [], {}
     if not isinstance(highlighted_context, dict):
         return info, nodes_out
 
+    ts = _timestamp_of(highlighted_context, "highlight_timestamp")
     nodes = highlighted_context.get("nodes") or {}
     if not isinstance(nodes, dict):
         return info, nodes_out
@@ -80,76 +103,11 @@ def collect_highlight_nodes(highlighted_context: dict) -> Tuple[List[str], Dict]
         else:
             t = "Unknown"
 
-        nv = node.get("node_values", {}) or {}
-        info.append(
+        nv = _described_values(node)
+        info.append((ts,
             f"Highlighted - {t}: [{', '.join(map(str, nv.keys()))}], "
             f"Values: [{', '.join(map(str, nv.values()))}]"
-        )
+        ))
         nodes_out[node_id] = node
 
     return info, nodes_out
-
-
-def _pick_best_node_values(nodes: dict) -> dict | None:
-    """
-    Given a flat {node_id: node} dict (already extracted by collect_*),
-    return the node_values of the highest-probability node, or None.
-    """
-    best_prob, best_nv = -1, None
-    for node in nodes.values():
-        if not isinstance(node, dict):
-            continue
-        try:
-            prob = float(node.get("probability", 0) or 0)
-        except Exception:
-            prob = 0
-        nv = node.get("node_values") or {}
-        if nv and prob > best_prob:
-            best_prob, best_nv = prob, nv
-    return best_nv
-
-
-def pick_best_referent_node(touch_ctx: dict, highlight_ctx: dict) -> dict | None:
-    """
-    Pick the best referent node from touch or highlight context.
-    Prioritizes by probability.
-    """
-    candidates = []
-
-    if isinstance(touch_ctx, dict):
-        for side in ("left_touch", "right_touch"):
-            block = touch_ctx.get(side)
-            if isinstance(block, dict):
-                nodes = block.get("nodes") or {}
-                if isinstance(nodes, dict):
-                    for node_id, node in nodes.items():
-                        if isinstance(node, dict):
-                            prob = float(node.get("probability", 0) or 0)
-                            nv = node.get("node_values") or {}
-                            if prob >= TOUCH_PROBABILITY_THRESHOLD and isinstance(nv, dict) and nv:
-                                candidates.append({
-                                    "source": f"touch:{side}",
-                                    "node_id": node_id,
-                                    "node_values": nv,
-                                    "probability": prob,
-                                })
-
-    if isinstance(highlight_ctx, dict):
-        nodes = highlight_ctx.get("nodes") or {}
-        if isinstance(nodes, dict):
-            for node_id, node in nodes.items():
-                if isinstance(node, dict):
-                    prob = float(node.get("probability", 0) or 0)
-                    nv = node.get("node_values") or {}
-                    if prob >= TOUCH_PROBABILITY_THRESHOLD and isinstance(nv, dict) and nv:
-                        candidates.append({
-                            "source": "highlight",
-                            "node_id": node_id,
-                            "node_values": nv,
-                            "probability": prob,
-                        })
-
-    if not candidates:
-        return None
-    candidates.sort(key=lambda c: c["probability"], reverse=True)
-    return candidates[0]

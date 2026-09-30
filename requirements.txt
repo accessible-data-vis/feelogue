@@ -14,6 +14,9 @@ paho-mqtt==2.1.0
 together==1.5.17
 notebook==7.4.3
 
+# Tests
+pytest
+
 # RTD / chart generation
 beautifulsoup4==4.13.3
 cachetools==5.5.2
@@ -40,7 +43,6 @@ packaging==24.2
 pillow==11.1.0
 proto-plus==1.26.1
 PyAudio==0.2.14
-pygame==2.6.1
 pyparsing==3.2.1
 python-dateutil==2.9.0.post0
 requests==2.32.3

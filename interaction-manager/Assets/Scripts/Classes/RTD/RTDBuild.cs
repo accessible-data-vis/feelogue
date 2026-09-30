@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
 
+/// <summary>Builds the grid of pin objects under the display's anchor.</summary>
 [ExecuteAlways]
 public class RTDBuild : MonoBehaviour
 {

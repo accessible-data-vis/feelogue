@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
+/// <summary>Sends display commands one at a time, waiting for each ACK.</summary>
 public class RTDCommandQueue
 {
     private Queue<QueuedCommand> _queue = new Queue<QueuedCommand>();
@@ -49,8 +50,7 @@ public class RTDCommandQueue
 
     /// <summary>
     /// Removes pending tail commands from the queue.
-    /// Note: if the currently in-flight command is a tail command it is NOT cancelled here;
-    /// it will complete or fail normally.
+    /// An in-flight tail command isn't cancelled here; it completes or fails normally.
     /// </summary>
     public void ClearTailCommands()
     {
@@ -84,7 +84,7 @@ public class RTDCommandQueue
     {
         if (!_waitingForAck || _currentCommand == null)
         {
-            Debug.Log($"[Queue] Stale ACK for line {ackedLine} (not waiting)");
+            AppLog.Detail(LogArea.Device, $"Stale ACK for line {ackedLine} (not waiting)");
             return;
         }
 
@@ -106,7 +106,7 @@ public class RTDCommandQueue
 
         if (_currentCommand.retryCount < _currentCommand.maxAttempts)
         {
-            Debug.Log($"[Queue] Retry {_currentCommand.retryCount}/{_currentCommand.maxAttempts} for line {_currentCommand.lineNumber}");
+            AppLog.Detail(LogArea.Device, $"Retry {_currentCommand.retryCount}/{_currentCommand.maxAttempts} for line {_currentCommand.lineNumber}");
             retryPacket = _currentCommand.packet;
             retryLine = _currentCommand.lineNumber;
             return true;

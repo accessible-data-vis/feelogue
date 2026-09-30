@@ -41,16 +41,8 @@ public delegate List<Dictionary<string, object>> TransformHandler(
 /// </summary>
 public class VegaTransformEngine
 {
-    // Primary ordering field (typically X-axis) for preserving bounds during aggregation
-    private string _primaryOrderingField;
-
     // Registry of transform handlers
     private readonly Dictionary<string, TransformHandler> _transformHandlers;
-
-    /// <summary>
-    /// Public accessor for primary ordering field (used by aggregate transforms).
-    /// </summary>
-    public string PrimaryOrderingField => _primaryOrderingField;
 
     public VegaTransformEngine()
     {
@@ -76,7 +68,7 @@ public class VegaTransformEngine
         _transformHandlers[transformType] = handler;
         if (!silent)
         {
-            Debug.Log($"Registered custom transform handler: '{transformType}'");
+            AppLog.Detail(LogArea.Chart, $"Registered custom transform handler: '{transformType}'");
         }
     }
 
@@ -94,18 +86,12 @@ public class VegaTransformEngine
     /// </summary>
     /// <param name="data">Input data</param>
     /// <param name="transforms">List of transform operations</param>
-    /// <param name="primaryOrderingField">Field used for X-axis/ordering (e.g., "date", "country", "year").
-    /// If provided, aggregation will preserve first/last values as {field}_start and {field}_end.</param>
     public List<Dictionary<string, object>> ApplyTransforms(
         List<Dictionary<string, object>> data,
-        List<JToken> transforms,
-        string primaryOrderingField = null)
+        List<JToken> transforms)
     {
         if (transforms == null || transforms.Count == 0)
             return data;
-
-        // Store primary ordering field for use in aggregate operations
-        _primaryOrderingField = primaryOrderingField;
 
         var result = new List<Dictionary<string, object>>(data);
 
@@ -206,7 +192,6 @@ public class VegaTransformEngine
 
     /// <summary>
     /// Aggregate a single group of rows.
-    /// Automatically preserves bounds for the primary ordering field (if specified).
     /// </summary>
     private Dictionary<string, object> AggregateGroup(
         List<Dictionary<string, object>> group,
@@ -261,45 +246,7 @@ public class VegaTransformEngine
             }
         }
 
-        // Preserve bounds for primary ordering field (X-axis)
-        PreservePrimaryFieldBounds(group, result);
-
         return result;
-    }
-
-    /// <summary>
-    /// Preserve first and last values of the primary ordering field (e.g., X-axis).
-    /// Adds {field}_start and {field}_end to enable value-based mapping across aggregation levels.
-    /// This is crucial for zoom-under-finger to work correctly when switching between layers.
-    /// </summary>
-    private void PreservePrimaryFieldBounds(
-        List<Dictionary<string, object>> group,
-        Dictionary<string, object> result)
-    {
-        if (string.IsNullOrEmpty(_primaryOrderingField) || group.Count == 0)
-            return;
-
-        var firstRow = group.First();
-        var lastRow = group.Last();
-
-        // Check if primary field exists in the data
-        if (!firstRow.ContainsKey(_primaryOrderingField))
-        {
-            // Field might have been transformed (e.g., "date" -> "month" via timeUnit)
-            // In this case, we can't preserve the original field, which is okay
-            return;
-        }
-
-        string startKey = $"{_primaryOrderingField}_start";
-        string endKey = $"{_primaryOrderingField}_end";
-
-        // Preserve first and last values
-        result[startKey] = firstRow[_primaryOrderingField];
-        result[endKey] = lastRow.ContainsKey(_primaryOrderingField)
-            ? lastRow[_primaryOrderingField]
-            : firstRow[_primaryOrderingField];
-
-        Debug.Log($"Preserved ordering field '{_primaryOrderingField}': [{result[startKey]}] to [{result[endKey]}]");
     }
 
     /// <summary>
@@ -618,7 +565,7 @@ public class VegaTransformEngine
 
     private bool EvaluateFilter(Dictionary<string, object> row, string expression)
     {
-        // Filter expression evaluation is not yet implemented — all rows pass through.
+        // Filter expressions aren't evaluated yet: all rows pass through.
         Debug.LogWarning($"[VegaTransform] Filter expression not evaluated: '{expression}' — all rows included.");
         return true;
     }

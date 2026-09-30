@@ -50,7 +50,6 @@ public class HandConfidenceController : MonoBehaviour
             wasVisible = shouldBeVisible;
             
             float confidence = leapHand?.Confidence ?? 0f;
-            //Debug.Log($"[{name}] Hand visibility: {shouldBeVisible} (confidence: {confidence:F3})");
         }
     }
     
@@ -76,7 +75,7 @@ public class HandConfidenceController : MonoBehaviour
             }
         }
         
-        // Control child scripts (like PositionReportNew, FingerSnapper)
+        // Control child scripts (like PositionReport, FingerSnapper)
         if (disableChildScripts && childScripts != null)
         {
             foreach (var script in childScripts)

@@ -11,18 +11,11 @@ from .context import (
     update_dataframe_from_layer,
 )
 
-from .intent import classify_query, classify_intent, detect_deictic_reference
+from .intent import classify_query, classify_intent
 
 from .touch_context import (
     collect_touch_nodes,
     collect_highlight_nodes,
-    pick_best_referent_node,
-)
-
-from .operations import (
-    build_operations_rtd_command,
-    resolve_operation_targets_to_values,
-    build_operation_ack,
 )
 
 from .data_query import csv_query_tool
@@ -31,7 +24,8 @@ from .chart_loader import analyze_user_intent_with_context
 
 from .postprocessing import (
     rewrite_long_node_lists_with_gpt,
-    extract_highlighted_data_points,
+    resolve_highlighted_nodes,
+    split_into_chunks,
 )
 
 from .graph import graph
@@ -50,22 +44,17 @@ __all__ = [
     # Intent
     "classify_query",
     "classify_intent",
-    "detect_deictic_reference",
     # Touch
     "collect_touch_nodes",
     "collect_highlight_nodes",
-    "pick_best_referent_node",
-    # Operations
-    "build_operations_rtd_command",
-    "resolve_operation_targets_to_values",
-    "build_operation_ack",
     # Data
     "csv_query_tool",
     # Chart loading
     "analyze_user_intent_with_context",
     # Post-processing
     "rewrite_long_node_lists_with_gpt",
-    "extract_highlighted_data_points",
+    "resolve_highlighted_nodes",
+    "split_into_chunks",
     # Graph
     "graph",
     # Orchestrator

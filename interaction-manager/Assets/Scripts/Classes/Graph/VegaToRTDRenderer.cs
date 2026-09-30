@@ -37,13 +37,31 @@ public static class VegaToRTDRenderer
         return seriesIndex % SERIES_SYMBOLS.Length;
     }
 
+    public const int X_PIXEL_MIN = 6;
+    public const int X_PIXEL_MAX_LIMIT = 58;   // last column available to data
+
     /// <summary>
-    /// Returns the fixed pixel bounds for the chart data area.
-    /// xPixelMax=55 gives a 49px range (6..55), highly composite for even spacing.
+    /// Fixed bounds for the chart data area: used when x is mapped by value (scatter with a
+    /// quantitative x) or when even spacing would leave too much blank space.
     /// </summary>
     private static (int xPixelMin, int xPixelMax, int yPixelMin, int yPixelMax) GetChartPixelBounds()
     {
-        return (6, 55, 0, 36);
+        return (X_PIXEL_MIN, 55, 0, 36);
+    }
+
+    /// <summary>
+    /// Bounds for index-mapped x (categorical/temporal). The right edge moves in so every gap
+    /// is the same width; halfBar insets thick bars. Falls back to the fixed bounds when the
+    /// blank space on the right would be wider than two gaps (e.g. 15-24 points).
+    /// </summary>
+    private static (int xPixelMin, int xPixelMax, int yPixelMin, int yPixelMax) GetChartPixelBounds(int visiblePointCount, int halfBar = 0)
+    {
+        if (visiblePointCount < 2) return GetChartPixelBounds();
+        int gap = (X_PIXEL_MAX_LIMIT - X_PIXEL_MIN - 2 * halfBar) / (visiblePointCount - 1);
+        if (gap < 1) return GetChartPixelBounds();   // more points than columns
+        int xPixelMax = X_PIXEL_MIN + 2 * halfBar + gap * (visiblePointCount - 1);
+        if (X_PIXEL_MAX_LIMIT - xPixelMax > 2 * gap) return GetChartPixelBounds();
+        return (X_PIXEL_MIN, xPixelMax, 0, 36);
     }
 
     /// <summary>
@@ -86,7 +104,7 @@ public static class VegaToRTDRenderer
     }
 
     /// <summary>
-    /// Generate RTD grid from Vega-Lite spec with viewport parameters.
+    /// Generate RTD grid from Vega-Lite spec with window parameters.
     /// Returns both the grid and node position data.
     /// </summary>
     public static (int[,] grid, List<ChartNode> nodes) Generate(VegaSpec spec, int windowStart, int windowSize, float windowYMin, float windowYMax, RenderOptions opts = null)
@@ -98,8 +116,8 @@ public static class VegaToRTDRenderer
 
         // Get chart type
         string chartType = spec.GetMarkType();
-        Debug.Log($"Generating {chartType} chart with viewport: X=[{windowStart}, {windowStart + windowSize - 1}], Y=[{windowYMin:F2}, {windowYMax:F2}]");
-        Debug.Log($"Generate() entry: spec.Encoding={spec.Encoding != null}, spec.Encoding.X={spec.Encoding?.X != null}, spec.Encoding.Y={spec.Encoding?.Y != null}");
+        AppLog.Detail(LogArea.Render, $"Generating {chartType} chart with window: X=[{windowStart}, {windowStart + windowSize - 1}], Y=[{windowYMin:F2}, {windowYMax:F2}]");
+        AppLog.Detail(LogArea.Render, $"Generate() entry: spec.Encoding={spec.Encoding != null}, spec.Encoding.X={spec.Encoding?.X != null}, spec.Encoding.Y={spec.Encoding?.Y != null}");
 
         // Get encodings
         var xEncoding = spec.Encoding.X;
@@ -111,7 +129,7 @@ public static class VegaToRTDRenderer
         string colorField = spec.Encoding.GetColorField();
         if (colorField != null)
         {
-            Debug.Log($"Multi-series chart detected: color field = '{colorField}'");
+            AppLog.Detail(LogArea.Render, $"Multi-series chart detected: color field = '{colorField}'");
             return GenerateMultiSeries(spec, grid, windowStart, windowSize, windowYMin, windowYMax, chartType, xField, yField, colorField, opts);
         }
 
@@ -136,12 +154,11 @@ public static class VegaToRTDRenderer
             return false;
         }).ToList();
 
-        Debug.Log($"Windowed to {windowedData.Count} points, filtered to {filteredData.Count} visible in Y-range");
+        AppLog.Detail(LogArea.Render, $"Windowed to {windowedData.Count} points, filtered to {filteredData.Count} visible in Y-range");
 
         List<float> yTickValues = ResolveYTickValues(yEncoding, windowYMin, windowYMax);
 
-        // Use viewport bounds for data mapping, NOT tick values
-        // Tick values are just for drawing tick markers
+        // Map data with the window bounds, not the tick values (ticks are only drawn)
         float yMin = windowYMin;
         float yMax = windowYMax;
 
@@ -153,7 +170,7 @@ public static class VegaToRTDRenderer
         // Pass full dataset with global indices for creating all nodes
         var fullDataWithIndices = fullData.Select((d, i) => (d, i)).ToList();
 
-        return DrawGridWithViewport(spec, grid, windowedDataTuples, filteredDataTuples, fullDataWithIndices, windowStart, windowSize, chartType, xField, yField, yMin, yMax, yTickValues, opts);
+        return DrawGridWithWindow(spec, grid, windowedDataTuples, filteredDataTuples, fullDataWithIndices, windowStart, windowSize, chartType, xField, yField, yMin, yMax, yTickValues, opts);
     }
 
     /// <summary>
@@ -185,7 +202,7 @@ public static class VegaToRTDRenderer
         }
 
         int uniqueXCount = uniqueXValues.Count;
-        Debug.Log($"Multi-series: {uniqueXCount} unique X values, windowStart={windowStart}, windowSize={windowSize}");
+        AppLog.Detail(LogArea.Render, $"Multi-series: {uniqueXCount} unique X values, windowStart={windowStart}, windowSize={windowSize}");
 
         // Window by unique X values
         int effectiveStart = Math.Min(windowStart, uniqueXCount);
@@ -199,7 +216,7 @@ public static class VegaToRTDRenderer
                       .Distinct()
                       .ToList()
             : new List<string> { "_default" };
-        Debug.Log($"Multi-series: {seriesNames.Count} series: [{string.Join(", ", seriesNames)}]");
+        AppLog.Detail(LogArea.Render, $"Multi-series: {seriesNames.Count} series: [{string.Join(", ", seriesNames)}]");
 
         // Capture original (pre-filter) index so symbols stay stable when series are hidden
         var allSeriesNames = seriesNames.ToList(); // copy before filtering
@@ -211,7 +228,7 @@ public static class VegaToRTDRenderer
         if (opts.HiddenSeries != null && opts.HiddenSeries.Count > 0)
         {
             seriesNames = seriesNames.Where(s => !opts.HiddenSeries.Contains(s)).ToList();
-            Debug.Log($"After filtering hidden series: {seriesNames.Count} visible: [{string.Join(", ", seriesNames)}]");
+            AppLog.Detail(LogArea.Render, $"After filtering hidden series: {seriesNames.Count} visible: [{string.Join(", ", seriesNames)}]");
         }
 
         // Generate Y-axis ticks
@@ -221,10 +238,15 @@ public static class VegaToRTDRenderer
         float yMin = windowYMin;
         float yMax = windowYMax;
 
-        var (xPixelMin, xPixelMax, yPixelMin, yPixelMax) = GetChartPixelBounds();
+        // Scatter with a quantitative X maps by value, not index; its uneven gaps are data.
+        bool xIsQuantitative = chartType == "point" && !spec.Encoding.X.IsCategorical();
+
+        var (xPixelMin, xPixelMax, yPixelMin, yPixelMax) = xIsQuantitative
+            ? GetChartPixelBounds()
+            : GetChartPixelBounds(windowedXValues.Count,
+                chartType == "bar" ? RTDLayout.CalculateBarWidth(windowedXValues.Count) / 2 : 0);
 
         // For scatter plots with quantitative X: compute xMin/xMax and nice tick values
-        bool xIsQuantitative = chartType == "point" && !spec.Encoding.X.IsCategorical();
         float xMin = 0f, xMax = 1f;
         List<float> xTickValues = null;
         if (xIsQuantitative)
@@ -238,7 +260,7 @@ public static class VegaToRTDRenderer
                 xMin = xTickValues[0];
                 xMax = xTickValues[xTickValues.Count - 1];
             }
-            Debug.Log($"Scatter X-axis: nice domain=[{xMin}, {xMax}], {xTickValues.Count} nice ticks: [{string.Join(", ", xTickValues)}]");
+            AppLog.Detail(LogArea.Render, $"Scatter X-axis: nice domain=[{xMin}, {xMax}], {xTickValues.Count} nice ticks: [{string.Join(", ", xTickValues)}]");
         }
 
         var (hideYAxisMulti, hideXAxisMulti) = GetAxisVisibility(opts);
@@ -293,7 +315,7 @@ public static class VegaToRTDRenderer
         // Stacked bar chart path vs line/scatter path
         if (chartType == "bar")
         {
-            // ===== STACKED BAR CHART =====
+            // ===== Stacked bar chart =====
             // Always use thick bars for stacked charts (thin stacked bars would be confusing)
 
             // Determine stack order: reverse-alphabetical = bottom segment first.
@@ -305,7 +327,7 @@ public static class VegaToRTDRenderer
                 stackOrder = Enumerable.Reverse(colorDomain).Where(s => seriesNames.Contains(s)).ToList();
             else
                 stackOrder = seriesNames.OrderByDescending(s => s).ToList();
-            Debug.Log($"Stacked bar chart: {seriesNames.Count} series, {windowedCount} X positions, barWidth={stackedBarWidth}, stack order (bottom→top): [{string.Join(", ", stackOrder)}]");
+            AppLog.Detail(LogArea.Render, $"Stacked bar chart: {seriesNames.Count} series, {windowedCount} X positions, barWidth={stackedBarWidth}, stack order (bottom→top): [{string.Join(", ", stackOrder)}]");
 
             int globalNodeIndex = 0;
             int windowEnd = effectiveStart + effectiveSize;
@@ -373,6 +395,7 @@ public static class VegaToRTDRenderer
                     var dataNode = new ChartNode($"data-point-{globalNodeIndex}", "data-point");
                     dataNode.Values[xField] = rowData[xField];
                     dataNode.Values[yField] = rowData[yField];
+                    CopyRowId(dataNode.Values, rowData);
                     dataNode.Values[colorField] = seriesName;
                     dataNode.Series = seriesName;
                     dataNode.Visibility = true;
@@ -407,6 +430,7 @@ public static class VegaToRTDRenderer
                     dataNode.Values[colorField] = seriesVal;
                     dataNode.Values[xField] = row[xField];
                     dataNode.Values[yField] = row[yField];
+                    CopyRowId(dataNode.Values, row);
                     dataNode.Series = seriesVal;
                     dataNode.Visibility = false;
 
@@ -421,7 +445,7 @@ public static class VegaToRTDRenderer
         {
             if (!hideAllData)
             {
-            // ===== LINE / SCATTER CHART =====
+            // ===== Line / scatter chart =====
             // Track pixel positions per series for connecting lines
             var seriesPixelPositions = new Dictionary<string, List<(int col, int row)>>();
             foreach (var s in seriesNames)
@@ -526,7 +550,7 @@ public static class VegaToRTDRenderer
             if (opts.UseSeriesSymbols)
             {
                 int overlapCount = overlapMap != null ? overlapMap.Values.Count(v => v.Count >= 2) : 0;
-                Debug.Log($"Symbols: {dataPointPositions.Count} points drawn with symbols, {overlapCount} overlaps detected");
+                AppLog.Detail(LogArea.Render, $"Symbols: {dataPointPositions.Count} points drawn with symbols, {overlapCount} overlaps detected");
             }
 
             // Draw connecting lines between consecutive same-series points (Bresenham)
@@ -579,9 +603,9 @@ public static class VegaToRTDRenderer
                         }
                     }
                 }
-                Debug.Log($"Drew connecting lines for {seriesNames.Count} series ({lineStyle})");
+                AppLog.Detail(LogArea.Render, $"Drew connecting lines for {seriesNames.Count} series ({lineStyle})");
 
-                // Clear line pixels around data point centers — only clears own series' lines
+                // Clear line pixels around data point centers (own series' lines only)
                 if (opts.SymbolClearance > 0)
                 {
                     foreach (var series in seriesNames)
@@ -593,7 +617,7 @@ public static class VegaToRTDRenderer
                     }
 
                     // Cross-series gap: erase 1px of other series' line pixels around each symbol center,
-                    // skipping positions where the other series also has a symbol (overlap — already handled).
+                    // skipping positions where the other series also has a symbol (overlaps are handled already).
                     if (opts.UseSeriesSymbols)
                     {
                         foreach (var series in seriesNames)
@@ -622,7 +646,7 @@ public static class VegaToRTDRenderer
                 }
             }
 
-            // Generate nodes for ALL data points (visible and hidden) with visibility flags
+            // Generate nodes for all data points (visible and hidden) with visibility flags
             int windowEnd = effectiveStart + effectiveSize;
             int globalNodeIndex = 0;
 
@@ -669,6 +693,7 @@ public static class VegaToRTDRenderer
                     if (!isHiddenNode && colorField != null) dataNode.Values[colorField] = seriesVal;
                     dataNode.Values[xField] = row[xField];
                     dataNode.Values[yField] = row[yField];
+                    CopyRowId(dataNode.Values, row);
                     dataNode.Series = seriesVal;
 
                     CopyRtdIndexBaseField(dataNode.Values, xField, row);
@@ -715,15 +740,15 @@ public static class VegaToRTDRenderer
         } // end if (!hideAllData)
         }
 
-        Debug.Log($"Multi-series: Generated {nodes.Count} total nodes: {nodes.Count(n => n.Type.Contains("x-axis"))} X-ticks, {nodes.Count(n => n.Type.Contains("y-axis"))} Y-ticks, {nodes.Count(n => n.Type == "data-point")} data points ({nodes.Count(n => n.Type == "data-point" && n.Visibility)} visible, {nodes.Count(n => n.Type == "data-point" && !n.Visibility)} hidden)");
+        AppLog.Detail(LogArea.Render, $"Multi-series: Generated {nodes.Count} total nodes: {nodes.Count(n => n.Type.Contains("x-axis"))} X-ticks, {nodes.Count(n => n.Type.Contains("y-axis"))} Y-ticks, {nodes.Count(n => n.Type == "data-point")} data points ({nodes.Count(n => n.Type == "data-point" && n.Visibility)} visible, {nodes.Count(n => n.Type == "data-point" && !n.Visibility)} hidden)");
         return (grid, nodes);
     }
 
     /// <summary>
-    /// Draw grid with axes and data for current viewport.
+    /// Draw grid with axes and data for the current window.
     /// Returns both the grid and node position data.
     /// </summary>
-    private static (int[,] grid, List<ChartNode> nodes) DrawGridWithViewport(
+    private static (int[,] grid, List<ChartNode> nodes) DrawGridWithWindow(
         VegaSpec spec,
         int[,] grid,
         List<(Dictionary<string, object> Data, int WindowIndex)> windowedData,
@@ -741,11 +766,15 @@ public static class VegaToRTDRenderer
     {
         if (opts == null) opts = new RenderOptions();
         bool hideAllData = opts.HiddenSeries != null && opts.HiddenSeries.Contains("(all data)");
-        Debug.Log($"DrawGridWithViewport() entry: spec.Encoding={spec.Encoding != null}, spec.Encoding.X={spec.Encoding?.X != null}, hideAllData={hideAllData}");
+        AppLog.Detail(LogArea.Render, $"DrawGridWithWindow() entry: spec.Encoding={spec.Encoding != null}, spec.Encoding.X={spec.Encoding?.X != null}, hideAllData={hideAllData}");
         // Track nodes (axis ticks, data points) for direct C# generation
         var nodes = new List<ChartNode>();
 
-        var (xPixelMin, xPixelMax, yPixelMin, yPixelMax) = GetChartPixelBounds();
+        var (xPixelMin, xPixelMax, yPixelMin, yPixelMax) =
+            (chartType == "point" && !spec.Encoding.X.IsCategorical())
+                ? GetChartPixelBounds()
+                : GetChartPixelBounds(windowSize,
+                    (chartType == "bar" && opts.UseThickBars) ? RTDLayout.CalculateBarWidth(windowSize) / 2 : 0);
 
         var (hideYAxis, hideXAxis) = GetAxisVisibility(opts);
         int zeroLineRow = DrawAxesAndTicks(grid, nodes, yMin, yMax, yTickValues, yField, xPixelMax, yPixelMin, yPixelMax, hideYAxis, hideXAxis);
@@ -762,7 +791,7 @@ public static class VegaToRTDRenderer
                 int singleBarXMax = xPixelMax - singleHalfBar;
 
                 // Get X-axis tick values from Vega spec (if defined and numeric)
-                // Note: Check for numeric tick values even if Type is ordinal/nominal,
+                // Check for numeric tick values even if Type is ordinal/nominal,
                 // since some specs declare ordinal but provide numeric ticks
                 HashSet<float> tickValueSet = null;
                 if (spec.Encoding?.X != null)
@@ -771,15 +800,15 @@ public static class VegaToRTDRenderer
                     if (xAxisTickValues != null && xAxisTickValues.Length > 0)
                     {
                         tickValueSet = new HashSet<float>(xAxisTickValues);
-                        Debug.Log($"Using {xAxisTickValues.Length} X-axis ticks from spec: {string.Join(", ", xAxisTickValues)}");
+                        AppLog.Detail(LogArea.Render, $"Using {xAxisTickValues.Length} X-axis ticks from spec: {string.Join(", ", xAxisTickValues)}");
                     }
                     else
                     {
-                        Debug.Log($"No numeric X-axis tick values in spec (Type={spec.Encoding.X.Type}) - will draw ticks at all data points");
+                        AppLog.Detail(LogArea.Render, $"No numeric X-axis tick values in spec (Type={spec.Encoding.X.Type}) - will draw ticks at all data points");
                     }
                 }
 
-                // FIRST: Draw X-tick markers for ALL points in X-window (before Y-filtering)
+                // First draw X-tick markers for all points in the X-window (before Y-filtering)
                 // This ensures Z+1 and Z+2 have the same X-ticks
                 int xTickIndex = 0;
                 foreach (var item in windowedData)
@@ -821,7 +850,7 @@ public static class VegaToRTDRenderer
                     }
                 }
 
-                // SECOND: Draw data points only for Y-filtered points
+                // Then draw data points only for Y-filtered points
                 if (!hideAllData)
                 {
                 int dataPointIndex = 0;
@@ -849,6 +878,7 @@ public static class VegaToRTDRenderer
                     var dataNode = new ChartNode($"data-point-{dataPointIndex}", "data-point");
                     dataNode.Values[xField] = point[xField];
                     dataNode.Values[yField] = yVal;
+                    CopyRowId(dataNode.Values, point);
 
                     var barCoords = RTDDrawing.DrawBar(grid, col, row, zeroLineRow, singleBarWidth);
                     dataNode.Coordinates.AddRange(barCoords);
@@ -860,7 +890,7 @@ public static class VegaToRTDRenderer
             }
             else if (!hideAllData)
             {
-                // Scatter plot: draw points within viewport
+                // Scatter plot: draw points within the window
                 foreach (var item in filteredData)
                 {
                     var point = item.Data;
@@ -868,7 +898,7 @@ public static class VegaToRTDRenderer
 
                     float yVal = RTDLayout.GetNumericValue(point[yField]);
 
-                    // Filter out points whose Y-value is outside viewport (safety check)
+                    // Filter out points whose Y-value is outside the window (safety check)
                     if (yVal < yMin || yVal > yMax)
                         continue;
 
@@ -883,11 +913,11 @@ public static class VegaToRTDRenderer
             }
         }
 
-        // Generate nodes for ALL data points (not just visible ones) with visibility flags
+        // Generate nodes for all data points (not just visible ones) with visibility flags
         // This allows navigation through the full dataset
         if (!hideAllData)
         {
-        Debug.Log($"Creating nodes for ALL {fullData.Count} data points with visibility flags");
+        AppLog.Detail(LogArea.Render, $"Creating nodes for ALL {fullData.Count} data points with visibility flags");
 
         var allDataNodes = new List<ChartNode>();
         int windowEnd = windowStart + windowSize;
@@ -899,15 +929,16 @@ public static class VegaToRTDRenderer
 
             float yVal = RTDLayout.GetNumericValue(point[yField]);
 
-            // Determine if this point is in the current viewport
+            // Determine if this point is in the current window
             bool inXWindow = globalIndex >= windowStart && globalIndex < windowEnd;
             bool inYWindow = yVal >= yMin && yVal <= yMax;
             bool isVisible = inXWindow && inYWindow;
 
-            // Create node for ALL data points (visible and hidden)
+            // Create a node for every data point (visible and hidden)
             var dataNode = new ChartNode($"data-point-{globalIndex}", "data-point");
             dataNode.Values[xField] = point[xField];
             dataNode.Values[yField] = point[yField];  // Store original value to preserve precision for visibility matching
+            CopyRowId(dataNode.Values, point);
 
             CopyRtdIndexBaseField(dataNode.Values, xField, point);
 
@@ -951,18 +982,18 @@ public static class VegaToRTDRenderer
             allDataNodes.Add(dataNode);
         }
 
-        // Replace the data-point nodes from filtered drawing with ALL data point nodes
+        // Replace the data-point nodes from the filtered drawing with all data point nodes
         nodes.RemoveAll(n => n.Type == "data-point");
         nodes.AddRange(allDataNodes);
         } // end if (!hideAllData)
 
-        Debug.Log($"Generated {nodes.Count} total nodes: {nodes.Count(n => n.Type.Contains("x-axis"))} X-ticks, {nodes.Count(n => n.Type.Contains("y-axis"))} Y-ticks, {nodes.Count(n => n.Type == "data-point")} data points ({nodes.Count(n => n.Type == "data-point" && n.Visibility)} visible, {nodes.Count(n => n.Type == "data-point" && !n.Visibility)} hidden)");
+        AppLog.Detail(LogArea.Render, $"Generated {nodes.Count} total nodes: {nodes.Count(n => n.Type.Contains("x-axis"))} X-ticks, {nodes.Count(n => n.Type.Contains("y-axis"))} Y-ticks, {nodes.Count(n => n.Type == "data-point")} data points ({nodes.Count(n => n.Type == "data-point" && n.Visibility)} visible, {nodes.Count(n => n.Type == "data-point" && !n.Visibility)} hidden)");
         return (grid, nodes);
     }
 
     // ===== Helper Methods =====
 
-    private static List<float> ResolveYTickValues(VegaChannel yEncoding, float windowYMin, float windowYMax)
+    public static List<float> ResolveYTickValues(VegaChannel yEncoding, float windowYMin, float windowYMax)
     {
         float[] yAxisTickValues = null;
         if (yEncoding != null && !yEncoding.IsCategorical())
@@ -978,6 +1009,13 @@ public static class VegaToRTDRenderer
         }
 
         return RTDLayout.GenerateNiceTicks(windowYMin, windowYMax, 6);
+    }
+
+    /// <summary>Copy the row id onto the pin so agent highlights can find it.</summary>
+    private static void CopyRowId(Dictionary<string, object> nodeValues, Dictionary<string, object> sourceRow)
+    {
+        if (sourceRow != null && sourceRow.TryGetValue(VegaChartLoader.RowIdField, out var id))
+            nodeValues[VegaChartLoader.RowIdField] = id;
     }
 
     private static void CopyRtdIndexBaseField(Dictionary<string, object> nodeValues,

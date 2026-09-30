@@ -9,7 +9,7 @@ using UnityEngine;
 ///
 /// Two highlight modes based on caller:
 ///   Touch / navigation (hand = "left", "right", "navigation"):
-///     Pulses the mark's own pixels — bar perimeter, symbol pins, dot, or box fallback.
+///     Pulses the mark's own pixels: bar perimeter, symbol pins, dot, or box fallback.
 ///   Agent (hand = "agent"):
 ///     Static box: erases mark pixels, raises surrounding box.
 ///     Thick bar exception: lowers interior, leaves perimeter.
@@ -24,6 +24,7 @@ public class RTDHighlightManager
     private const float LINE_SHAPE_PIN_DELAY   = 0f;
     private const float ISOLATION_PIN_DELAY    = 0.025f;
     private const float TOUCH_PULSE_INTERVAL   = 0.4f;
+    private const float SETTLE_AFTER           = 2 * TOUCH_PULSE_INTERVAL;   // on, off, on, then hold
     private const int   LOCAL_ISOLATION_RADIUS = 2;
 
     // ===== Dependencies =====
@@ -34,9 +35,9 @@ public class RTDHighlightManager
     private readonly RTDGestureHighlightPersistence _gesturePersistence;
 
     // ===== Highlight Configs (pushed from VegaChartLoader) =====
-    private HighlightConfig _gestureConfig = new HighlightConfig { Shape = HighlightMarkShape.Mark, Anim = HighlightAnim.Animated, Duration = -1f };
-    private HighlightConfig _agentConfig   = new HighlightConfig { Shape = HighlightMarkShape.Box,  Anim = HighlightAnim.Static,   Duration = -1f };
-    private HighlightConfig _navConfig     = new HighlightConfig { Shape = HighlightMarkShape.Mark, Anim = HighlightAnim.Animated, Duration = -1f };
+    private HighlightConfig _gestureConfig = new HighlightConfig { Shape = HighlightMarkShape.Box, Anim = HighlightAnim.Static,   Duration = -1f };
+    private HighlightConfig _agentConfig   = new HighlightConfig { Shape = HighlightMarkShape.Box, Anim = HighlightAnim.Animated, Duration = -1f };
+    private HighlightConfig _navConfig     = new HighlightConfig { Shape = HighlightMarkShape.Box, Anim = HighlightAnim.Settle,   Duration = -1f };
 
     // ===== State =====
     private Dictionary<string, List<Vector2Int>> _activeHighlightPoints   = new Dictionary<string, List<Vector2Int>>();
@@ -146,7 +147,7 @@ public class RTDHighlightManager
                 StartRoutine(key, ShowShapeCoroutine(key, x, y, neighbours, duration));
                 TrackKeyForHand(hand, key);
             });
-            Debug.Log("[ShowShape] deferred (streaming in progress)");
+            AppLog.Detail(LogArea.Render, "[ShowShape] deferred (streaming in progress)");
             return;
         }
 
@@ -180,7 +181,7 @@ public class RTDHighlightManager
 
     /// <summary>
     /// Stops all active highlight coroutines for <paramref name="hand"/> and zeroes their
-    /// overlay pixels in memory.  Does NOT send to the device — call
+    /// overlay pixels in memory. Doesn't send to the device: call
     /// <see cref="OnSendLinesFromView"/> with the returned set to flush changes.
     ///
     /// Designed for use by <see cref="ShowTouchHighlightsCoroutine"/> (Static path) so it
@@ -202,7 +203,7 @@ public class RTDHighlightManager
 
         foreach (var key in keys.ToList())
         {
-            // Capture points BEFORE StopCoroutine — the coroutine's finally block
+            // Capture points before StopCoroutine: the coroutine's finally block
             // runs synchronously inside StopCoroutine and removes the key from the dict.
             _activeHighlightPoints.TryGetValue(key, out var points);
 
@@ -224,7 +225,7 @@ public class RTDHighlightManager
             }
         }
 
-        // Flush AFTER StopCoroutine: clears stale nav commands AND the redundant restore
+        // Flush after StopCoroutine: clears stale nav commands and the redundant restore
         // BatchSendLines commands just queued by the finally blocks.
         OnFlushCommandQueue?.Invoke();
 
@@ -256,7 +257,7 @@ public class RTDHighlightManager
 
         if (message == null)
         {
-            Debug.Log("No touch highlights to show");
+            AppLog.Detail(LogArea.Render, "No touch highlights to show");
             OnSpeakText?.Invoke("No recent touches");
             return;
         }
@@ -287,24 +288,6 @@ public class RTDHighlightManager
         }
 
         return result;
-    }
-
-    // ===== Delegated Gesture Persistence =====
-
-    public void StoreAllGestureHighlights(Func<Vector2Int, (object xValue, object yValue)?> getNodeValues)
-    {
-        _gesturePersistence.StoreAllGestureHighlights(GetActiveGestureHighlights(), getNodeValues);
-    }
-
-    public void RestoreAllGestureHighlights()
-    {
-        foreach (var (coords, shape, hand) in _gesturePersistence.GetRestoredGestureHighlights())
-            ShowTouchHighlights(coords, shape, -1f, hand);
-    }
-
-    public void ClearStoredGestureValues()
-    {
-        _gesturePersistence.ClearStoredGestureValues();
     }
 
     // ===== Config helpers =====
@@ -393,7 +376,7 @@ public class RTDHighlightManager
                     Vector2Int? centerToLower = invertCenter ? coord : (Vector2Int?)null;
 
                     // The coroutine writes overlays synchronously (before its first yield)
-                    // but skips the per-coroutine batch send — we'll do one combined send below.
+                    // but skips the per-coroutine batch send; one combined send follows below.
                     var handle = _coroutineHost.StartCoroutine(
                         ShowStaticPinsCoroutine(key, pins, effectiveDuration, centerToLower, staticPinValue,
                                                 suppressInitialSend: true, useBatch: true));
@@ -470,7 +453,8 @@ public class RTDHighlightManager
                 var handle = _coroutineHost.StartCoroutine(
                     PulseMarkCoroutine(key, coord, pins, effectiveDuration, invertCenter,
                                        isBarInterior: cfg.Shape == HighlightMarkShape.BarInterior,
-                                       useBatch: cfg.UseBatchSend));
+                                       useBatch: cfg.UseBatchSend,
+                                       settleAfter: cfg.Anim == HighlightAnim.Settle ? SETTLE_AFTER : -1f));
                 _activeCoroutines[key] = handle;
                 TrackKeyForHand(hand, key);
             }
@@ -483,7 +467,7 @@ public class RTDHighlightManager
     /// Each toggle writes overlay values directly and issues a single batch line send.
     /// Natural expiry also restores via a single batch send.
     /// </summary>
-    private IEnumerator PulseMarkCoroutine(string key, Vector2Int center, List<Vector2Int> pins, float duration, bool invertCenter = false, bool isBarInterior = false, bool useBatch = false)
+    private IEnumerator PulseMarkCoroutine(string key, Vector2Int center, List<Vector2Int> pins, float duration, bool invertCenter = false, bool isBarInterior = false, bool useBatch = false, float settleAfter = -1f)
     {
         float elapsed = 0f;
         // BarInterior: start "filled" so first toggle → hollow (-1).
@@ -524,6 +508,18 @@ public class RTDHighlightManager
                     foreach (var p in pins)
                         OnSetOverlay?.Invoke(p.y, p.x, up ? overlayUp : overlayDown);
                     if (invertCenter) OnSetOverlay?.Invoke(center.y, center.x, up ? (sbyte)-1 : (sbyte)1);
+                }
+
+                // Settle: once past settleAfter and showing the resting state, hold it.
+                bool resting = isBarInterior ? !up : up;
+                if (settleAfter >= 0f && elapsed >= settleAfter && resting)
+                {
+                    while (duration < 0f || elapsed < duration)
+                    {
+                        yield return null;
+                        elapsed += Time.deltaTime;
+                    }
+                    break;
                 }
 
                 yield return new WaitForSeconds(TOUCH_PULSE_INTERVAL);
@@ -674,7 +670,7 @@ public class RTDHighlightManager
 
             var prevOverlay = new Dictionary<Vector2Int, sbyte>();
             var affectedPts = new List<Vector2Int>();
-            _activeHighlightPoints[key] = affectedPts; // shared ref — cleanup works at any point mid-animation
+            _activeHighlightPoints[key] = affectedPts; // shared ref, so cleanup works at any point mid-animation
 
             // BarInterior and BarPerimeter lower pins; everything else raises them
             sbyte pinValue = (cfg.Shape == HighlightMarkShape.BarInterior || cfg.Shape == HighlightMarkShape.BarPerimeter) ? (sbyte)-1 : (sbyte)1;
@@ -693,7 +689,7 @@ public class RTDHighlightManager
             {
                 var center = new Vector2Int(cx, cy);
                 prevOverlay[center] = _bufferManager.Overlay[cy, cx];
-                affectedPts.Add(center);        // tracked BEFORE overlay is set
+                affectedPts.Add(center);        // tracked before the overlay is set
                 OnSetOverlay?.Invoke(cy, cx, -1);
             }
 
@@ -983,9 +979,9 @@ public class RTDHighlightManager
             }
 
         if (isolated.Count > 0)
-            Debug.Log($"[LocalIsolation] Pins isolated: {string.Join(", ", isolated.Keys.Select(v => $"({v.x},{v.y})"))}");
+            AppLog.Detail(LogArea.Render, $"[LocalIsolation] Pins isolated: {string.Join(", ", isolated.Keys.Select(v => $"({v.x},{v.y})"))}");
         else
-            Debug.Log("[LocalIsolation] No pins isolated");
+            AppLog.Detail(LogArea.Render, "[LocalIsolation] No pins isolated");
 
         return isolated;
     }

@@ -1,6 +1,6 @@
 /// <summary>
 /// Centralized constants for the Raised Tactile Display (RTD) DotPad hardware.
-/// All hardware specifications and derived dimensions are defined here to ensure consistency.
+/// All hardware specifications and derived dimensions live here.
 /// </summary>
 public static class RTDConstants
 {
@@ -24,7 +24,7 @@ public static class RTDConstants
     // Number of graphic lines (40 pixels / 4 pixels per line = 10 lines)
     public const int NUM_LINES = PIXEL_ROWS / CELL_HEIGHT;
 
-    // Maximum number of overview layers supported
+    // Fallback layer count when the caller passes none (real presentations have series + 4)
     public const int MAX_OVERVIEW_LAYERS = 4;
 
     // ===== Unity Visual Pin Heights =====

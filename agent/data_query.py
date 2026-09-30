@@ -14,35 +14,31 @@ from .utils import format_messages_to_str
 from .config import OPENAI_MODEL_ANALYSIS
 from .prompts import get_data_query_prefix
 
-# LLM for CSV/data queries - temperature=0 for reliable tool-call compliance
+# LLM for CSV/data queries; temperature=0 for reliable tool-call compliance
 csv_llm = ChatOpenAI(model=OPENAI_MODEL_ANALYSIS, temperature=0, stop=None)
 
-# Cache for the pandas agent executor -- rebuilt only when dataset or columns change.
-# dataset_version from state is the cache key: it increments on every
-# layer_data_update so a new DataFrame always gets a fresh executor.
+# Cache for the pandas agent executor, rebuilt only when the dataset or columns change.
+# Every layer_data_update builds a new DataFrame, so id(df) changes with the data.
 _cached_executor = None
-_cached_version = None
 _cached_df_id = None
 _cached_columns = None
 
 
 def _get_executor(df, selected_data, columns_to_use: list, state: dict):
     """Return a pandas agent executor, reusing the cached one when nothing changed."""
-    global _cached_executor, _cached_version, _cached_df_id, _cached_columns
+    global _cached_executor, _cached_df_id, _cached_columns
 
-    version = state.get("dataset_version")
     df_id = id(df)
     cols = tuple(columns_to_use)
 
     if (
         _cached_executor is None
-        or version != _cached_version
         or df_id != _cached_df_id
         or cols != _cached_columns
     ):
         color_field = state.get("color_field")
         df_columns = state.get("df_columns", [])
-        print(f"Building pandas agent executor (version={version}, columns={cols})")
+        print(f"Building pandas agent executor (columns={cols})")
         _cached_executor = create_pandas_dataframe_agent(
             csv_llm,
             selected_data,
@@ -65,7 +61,6 @@ def _get_executor(df, selected_data, columns_to_use: list, state: dict):
                 if hasattr(t, "globals"):
                     t.globals = merged
                 break
-        _cached_version = version
         _cached_df_id = df_id
         _cached_columns = cols
     else:
@@ -105,10 +100,10 @@ def csv_query_tool(
         as "no such data", NOT as zero, and do not report it to the user verbatim.
         If no data is loaded or an error occurs: a plain-language message saying so.
     """
-    print("query inside csv query", query)
+    print("CSV Tool Query: \n", query)
     try:
-        from .context import get_df
-        df = get_df()
+        from .context import frame_for_questions
+        df = frame_for_questions(state)
         if df is None or df.empty:
             return (
                 "I don't have any chart data loaded right now. "
@@ -128,10 +123,22 @@ def csv_query_tool(
         elif chart_type == "scatter" and second_column and second_column in df.columns:
             columns_to_use = [x_field, y_field, second_column]
         else:
-            columns_to_use = list(df.columns)
+            columns_to_use = [c for c in df.columns if c != "_id"]
 
-        if "visible" in df.columns and not df["visible"].all() and "visible" not in columns_to_use:
-            columns_to_use.append("visible")
+        # Row ids travel with every query so an answer can name the rows it is
+        # anchored to (highlighted_ids); the spoken answer never mentions them.
+        if "_id" in df.columns and "_id" not in columns_to_use:
+            columns_to_use.append("_id")
+
+        if "in_view" in df.columns and not df["in_view"].all() and "in_view" not in columns_to_use:
+            columns_to_use.append("in_view")
+        if "hidden_by_filter" in df.columns and "hidden_by_filter" not in columns_to_use:
+            columns_to_use.append("hidden_by_filter")
+
+        # Include each selected column's parsed-datetime shadow companion, if any.
+        from .date_cast import shadow_col_name
+        columns_to_use += [c for c in (shadow_col_name(x) for x in columns_to_use)
+                           if c in df.columns and c not in columns_to_use]
 
         selected_data = df[columns_to_use]
         executor = _get_executor(df, selected_data, columns_to_use, state)

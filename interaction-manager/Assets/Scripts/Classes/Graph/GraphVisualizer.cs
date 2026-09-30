@@ -19,9 +19,9 @@ public class GraphVisualizer : MonoBehaviour, InterfaceGraphVisualizer
     private Dictionary<string, int> _labelCountPerPin = new Dictionary<string, int>(); // Track labels per pin
     private Dictionary<Vector2Int, List<NodeComponent>> _coordIndex = new Dictionary<Vector2Int, List<NodeComponent>>();
 
-    // ===== Viewport Overlay =====
-    private GameObject _viewportOverlay;
-    private LineRenderer _viewportLineRenderer;
+    // ===== Window Overlay =====
+    private GameObject _windowOverlay;
+    private LineRenderer _windowLineRenderer;
 
     // ===== Constants =====
     private const float GRAPH_OFFSET_Y = 0.125f;
@@ -35,9 +35,9 @@ public class GraphVisualizer : MonoBehaviour, InterfaceGraphVisualizer
     /// </summary>
     public void GenerateGraph(List<ChartNode> chartNodes, string chartType, string dataType)
     {
-        Debug.Log($"GenerateGraph: {chartNodes.Count} nodes");
-        Debug.Log("Chart Type: " + chartType);
-        Debug.Log("Data: " + dataType);
+        AppLog.Detail(LogArea.Render, $"GenerateGraph: {chartNodes.Count} nodes");
+        AppLog.Detail(LogArea.Render, "Chart Type: " + chartType);
+        AppLog.Detail(LogArea.Render, "Data: " + dataType);
 
         // Initialize pin lookup
         if (!InitializePinLookup())
@@ -66,7 +66,7 @@ public class GraphVisualizer : MonoBehaviour, InterfaceGraphVisualizer
         CreateEdges(edges, scaleFactor);
 
         BuildCoordIndex();
-        Debug.Log($"Graph visualization completed: {chartNodes.Count} nodes, {edges.Count} edges");
+        AppLog.Detail(LogArea.Render, $"Graph visualization completed: {chartNodes.Count} nodes, {edges.Count} edges");
     }
 
     private void BuildCoordIndex()
@@ -102,8 +102,8 @@ public class GraphVisualizer : MonoBehaviour, InterfaceGraphVisualizer
     /// </summary>
     public void GenerateGraph(string json, string chartType, string dataType)
     {
-        Debug.Log("Chart Type: " + chartType);
-        Debug.Log("Data: " + dataType);
+        AppLog.Detail(LogArea.Render, "Chart Type: " + chartType);
+        AppLog.Detail(LogArea.Render, "Data: " + dataType);
 
         // Initialize pin lookup
         if (!InitializePinLookup())
@@ -128,7 +128,7 @@ public class GraphVisualizer : MonoBehaviour, InterfaceGraphVisualizer
         // Create Edges
         CreateEdges(graph.links, scaleFactor);
 
-        Debug.Log("Graph visualization completed.");
+        AppLog.Detail(LogArea.Render, "Graph visualization completed.");
     }
 
     // ===== Helper Methods =====
@@ -153,7 +153,9 @@ public class GraphVisualizer : MonoBehaviour, InterfaceGraphVisualizer
                 symbol = chartNode.Symbol,
                 values = chartNode.Values,
                 coordinates = chartNode.Coordinates.Select(coord => new float[] { coord.x, coord.y }).ToArray(),
-                xy = chartNode.Coordinates.Count > 0 ? new int[] { chartNode.Coordinates[0].x, chartNode.Coordinates[0].y } : new int[] { 0, 0 },
+                // Off-screen nodes have no pin position: the renderer only gives
+                // coordinates to drawn marks.
+                xy = chartNode.Coordinates.Count > 0 ? new int[] { chartNode.Coordinates[0].x, chartNode.Coordinates[0].y } : null,
             };
 
             legacyNodes.Add(node);
@@ -213,7 +215,7 @@ public class GraphVisualizer : MonoBehaviour, InterfaceGraphVisualizer
                     seriesEdgeCount++;
                 }
             }
-            Debug.Log($"Series-aware edges: {seriesEdgeCount} edges across {seriesGroups.Count()} series");
+            AppLog.Detail(LogArea.Render, $"Series-aware edges: {seriesEdgeCount} edges across {seriesGroups.Count()} series");
         }
         else
         {
@@ -256,7 +258,7 @@ public class GraphVisualizer : MonoBehaviour, InterfaceGraphVisualizer
             }
         }
 
-        Debug.Log($"Generated {edges.Count} edges: {xAxisTicks.Count - 1} X-axis, {yAxisTicks.Count - 1} Y-axis, {dataPoints.Count * 2} data-to-axis");
+        AppLog.Detail(LogArea.Render, $"Generated {edges.Count} edges: {xAxisTicks.Count - 1} X-axis, {yAxisTicks.Count - 1} Y-axis, {dataPoints.Count * 2} data-to-axis");
 
         return edges;
     }
@@ -288,7 +290,7 @@ public class GraphVisualizer : MonoBehaviour, InterfaceGraphVisualizer
     private void ClearVisualization()
     {
         int childCount = transform.childCount;
-        Debug.Log($"Clearing {childCount} children from GraphVisualizer");
+        AppLog.Detail(LogArea.Render, $"Clearing {childCount} children from GraphVisualizer");
 
         // Destroy in reverse order to avoid index shifting issues
         for (int i = transform.childCount - 1; i >= 0; i--)
@@ -300,7 +302,7 @@ public class GraphVisualizer : MonoBehaviour, InterfaceGraphVisualizer
         nodes.Clear();
         _labelCountPerPin.Clear();
         _coordIndex.Clear();
-        Debug.Log($"Cleared visualization. Remaining children: {transform.childCount}");
+        AppLog.Detail(LogArea.Render, $"Cleared visualization. Remaining children: {transform.childCount}");
     }
 
     /// <summary>
@@ -328,7 +330,7 @@ public class GraphVisualizer : MonoBehaviour, InterfaceGraphVisualizer
         float width = (maxX - minX) > 0 ? (maxX - minX) : 1;
         float height = (maxY - minY) > 0 ? (maxY - minY) : 1;
 
-        Debug.Log($"Graph Bounds - minX: {minX}, maxX: {maxX}, minY: {minY}, maxY: {maxY}");
+        AppLog.Detail(LogArea.Render, $"Graph Bounds - minX: {minX}, maxX: {maxX}, minY: {minY}, maxY: {maxY}");
 
         return (minX, minY, maxX, maxY, width, height);
     }
@@ -397,7 +399,7 @@ public class GraphVisualizer : MonoBehaviour, InterfaceGraphVisualizer
             nodes[node.id] = nodeObj;
 
             if (isVisible)
-                Debug.Log($"Node {node.id} - Visible at coordinates: {node.coordinates?[0][0]}, {node.coordinates?[0][1]}");
+                AppLog.Detail(LogArea.Render, $"Node {node.id} - Visible at coordinates: {node.coordinates?[0][0]}, {node.coordinates?[0][1]}");
         }
     }
 
@@ -460,7 +462,7 @@ public class GraphVisualizer : MonoBehaviour, InterfaceGraphVisualizer
         string nodeType = node.type ?? "unknown";
         if (nodeType.Contains("axis-tick"))
         {
-            Debug.Log($"AXIS TICK: {node.id} (type={nodeType}) requesting pin key '{key}' (x={node.xy[0]}, y={node.xy[1]})");
+            AppLog.Detail(LogArea.Render, $"AXIS TICK: {node.id} (type={nodeType}) requesting pin key '{key}' (x={node.xy[0]}, y={node.xy[1]})");
         }
 
         if (_pinLookup.TryGetValue(key, out Transform pinTf))
@@ -484,11 +486,11 @@ public class GraphVisualizer : MonoBehaviour, InterfaceGraphVisualizer
 
             if (nodeType.Contains("axis-tick"))
             {
-                Debug.Log($"AXIS TICK PLACED: {node.id} text='{text}' at Unity pin '{key}' → world pos {worldLabelPos} (pin name: {pinTf.name})");
+                AppLog.Detail(LogArea.Render, $"AXIS TICK PLACED: {node.id} text='{text}' at Unity pin '{key}' → world pos {worldLabelPos} (pin name: {pinTf.name})");
             }
             else
             {
-                Debug.Log($"Creating label for node {node.id} at pin {key} (stack index {labelIndex}): '{text}' (values: {string.Join(", ", node.values.Select(kv => $"{kv.Key}={kv.Value}"))})");
+                AppLog.Detail(LogArea.Render, $"Creating label for node {node.id} at pin {key} (stack index {labelIndex}): '{text}' (values: {string.Join(", ", node.values.Select(kv => $"{kv.Key}={kv.Value}"))})");
             }
 
             if (lbl.TryGetComponent<TMP_Text>(out var tmp))
@@ -541,8 +543,15 @@ public class GraphVisualizer : MonoBehaviour, InterfaceGraphVisualizer
         foreach (var coord in coords)
         {
             if (_coordIndex.TryGetValue(coord, out var nodeList))
+            {
                 foreach (var nc in nodeList)
-                    result.Add(nc);
+                {
+                    // The index is built before the visibility filter runs, so skip
+                    // nodes hidden since.
+                    if (nc.visibility)
+                        result.Add(nc);
+                }
+            }
         }
         return result.ToList();
     }
@@ -664,7 +673,7 @@ public class GraphVisualizer : MonoBehaviour, InterfaceGraphVisualizer
     /// Also filters axis tick labels to match the visible range.
     /// </summary>
     public void UpdateVisibleNodes(List<Dictionary<string, object>> visibleData, string xField, string yField,
-        float? axisDomainYMin = null, float? axisDomainYMax = null, List<object> xViewportValues = null)
+        float? axisDomainYMin = null, float? axisDomainYMax = null, List<object> xWindowValues = null)
     {
         if (visibleData == null || visibleData.Count == 0)
         {
@@ -673,7 +682,7 @@ public class GraphVisualizer : MonoBehaviour, InterfaceGraphVisualizer
         }
 
         var visiblePoints = BuildVisiblePointKeys(visibleData, xField, yField);
-        Debug.Log($"Sample visible keys: {string.Join(", ", visiblePoints.Take(5))}");
+        AppLog.Detail(LogArea.Render, $"Sample visible keys: {string.Join(", ", visiblePoints.Take(5))}");
 
         var xValues = visibleData.Select(d => d.ContainsKey(xField) ? d[xField] : null).Where(v => v != null).ToList();
         var (yMin, yMax) = ResolveYRange(visibleData, yField, axisDomainYMin, axisDomainYMax);
@@ -686,7 +695,7 @@ public class GraphVisualizer : MonoBehaviour, InterfaceGraphVisualizer
             xMax = numericXValues.Max();
         }
 
-        Debug.Log($"UpdateVisibleNodes: {visiblePoints.Count} visible data points, Y range: {yMin}-{yMax}, X range: {xMin}-{xMax}");
+        AppLog.Detail(LogArea.Render, $"UpdateVisibleNodes: {visiblePoints.Count} visible data points, Y range: {yMin}-{yMax}, X range: {xMin}-{xMax}");
 
         int hiddenCount = 0, shownCount = 0, axisHiddenCount = 0;
 
@@ -699,7 +708,7 @@ public class GraphVisualizer : MonoBehaviour, InterfaceGraphVisualizer
             if (nc.type.Contains("axis-tick"))
             {
                 bool visible = ApplyAxisTickVisibility(kvp.Key, nodeObj, nc, xField, yField,
-                    xMin, xMax, yMin, yMax, xValues, xViewportValues, axisDomainYMin, axisDomainYMax,
+                    xMin, xMax, yMin, yMax, xValues, xWindowValues, axisDomainYMin, axisDomainYMax,
                     shownCount, hiddenCount);
                 if (!visible) axisHiddenCount++;
                 continue;
@@ -708,7 +717,7 @@ public class GraphVisualizer : MonoBehaviour, InterfaceGraphVisualizer
             // Always show other axis elements (axis lines, zero markers)
             if (nc.type.Contains("axis") || nc.type.Contains("zero"))
             {
-                nodeObj.SetActive(true);
+                SetNodeAndLabelVisibility(kvp.Key, nodeObj, true);
                 continue;
             }
 
@@ -719,7 +728,7 @@ public class GraphVisualizer : MonoBehaviour, InterfaceGraphVisualizer
             }
         }
 
-        Debug.Log($"UpdateVisibleNodes: data shown={shownCount}, data hidden={hiddenCount}, axis ticks hidden={axisHiddenCount}");
+        AppLog.Detail(LogArea.Render, $"UpdateVisibleNodes: data shown={shownCount}, data hidden={hiddenCount}, axis ticks hidden={axisHiddenCount}");
     }
 
     /// <summary>
@@ -744,7 +753,7 @@ public class GraphVisualizer : MonoBehaviour, InterfaceGraphVisualizer
     {
         if (axisDomainYMin.HasValue && axisDomainYMax.HasValue)
         {
-            Debug.Log($"Using renderer's Y-axis domain for tick filtering: [{axisDomainYMin}, {axisDomainYMax}]");
+            AppLog.Detail(LogArea.Render, $"Using renderer's Y-axis domain for tick filtering: [{axisDomainYMin}, {axisDomainYMax}]");
             return (axisDomainYMin, axisDomainYMax);
         }
 
@@ -752,7 +761,7 @@ public class GraphVisualizer : MonoBehaviour, InterfaceGraphVisualizer
         var numericY = yValues.Select(v => TryGetNumericValue(v)).Where(v => v.HasValue).Select(v => v.Value).ToList();
         float? yMin = numericY.Any() ? numericY.Min() : (float?)null;
         float? yMax = numericY.Any() ? numericY.Max() : (float?)null;
-        Debug.Log($"Calculated Y-range from visible data: [{yMin}, {yMax}]");
+        AppLog.Detail(LogArea.Render, $"Calculated Y-range from visible data: [{yMin}, {yMax}]");
         return (yMin, yMax);
     }
 
@@ -762,19 +771,23 @@ public class GraphVisualizer : MonoBehaviour, InterfaceGraphVisualizer
     private void SetNodeAndLabelVisibility(string nodeId, GameObject nodeObj, bool visible)
     {
         nodeObj.SetActive(visible);
+        // Touch, agent highlights and navigation read nc.visibility, not the GameObject.
+        var nc = nodeObj.GetComponent<NodeComponent>();
+        if (nc != null)
+            nc.visibility = visible;
         Transform labelTf = transform.Find($"Label {nodeId}");
         if (labelTf != null)
             labelTf.gameObject.SetActive(visible);
     }
 
     /// <summary>
-    /// Apply visibility to an axis-tick node based on whether its value is within the current viewport.
+    /// Apply visibility to an axis-tick node based on whether its value is within the current window.
     /// Returns the computed visibility for the caller to track counts.
     /// </summary>
     private bool ApplyAxisTickVisibility(string nodeId, GameObject nodeObj, NodeComponent nc,
         string xField, string yField,
         float? xMin, float? xMax, float? yMin, float? yMax,
-        List<object> xValues, List<object> xViewportValues,
+        List<object> xValues, List<object> xWindowValues,
         float? axisDomainYMin, float? axisDomainYMax,
         int shownCount, int hiddenCount)
     {
@@ -790,7 +803,7 @@ public class GraphVisualizer : MonoBehaviour, InterfaceGraphVisualizer
                 if (axisDomainYMin.HasValue && axisDomainYMax.HasValue)
                 {
                     isVisible = tickValue.Value >= yMin.Value && tickValue.Value <= yMax.Value;
-                    Debug.Log($"Y-tick {tickValue.Value}: visible={isVisible} (domain [{yMin.Value}, {yMax.Value}])");
+                    AppLog.Detail(LogArea.Render, $"Y-tick {tickValue.Value}: visible={isVisible} (domain [{yMin.Value}, {yMax.Value}])");
                 }
                 else
                 {
@@ -807,14 +820,14 @@ public class GraphVisualizer : MonoBehaviour, InterfaceGraphVisualizer
         {
             string tickCategory = nc.values[xField].ToString();
 
-            List<string> visibleXCategories = (xViewportValues != null && xViewportValues.Count > 0)
-                ? xViewportValues.Select(v => v.ToString()).ToList()
+            List<string> visibleXCategories = (xWindowValues != null && xWindowValues.Count > 0)
+                ? xWindowValues.Select(v => v.ToString()).ToList()
                 : xValues.Select(v => v.ToString()).ToList();
 
             isVisible = visibleXCategories.Contains(tickCategory);
 
             if (shownCount + hiddenCount < 3)
-                Debug.Log($"X-axis tick '{tickCategory}': visible={isVisible} (in {visibleXCategories.Count} visible categories)");
+                AppLog.Detail(LogArea.Render, $"X-axis tick '{tickCategory}': visible={isVisible} (in {visibleXCategories.Count} visible categories)");
         }
 
         SetNodeAndLabelVisibility(nodeId, nodeObj, isVisible);
@@ -833,7 +846,7 @@ public class GraphVisualizer : MonoBehaviour, InterfaceGraphVisualizer
         if (nc.values != null)
         {
             if (shownCount + hiddenCount < 3)
-                Debug.Log($"Node {nc.type} has fields: [{string.Join(", ", nc.values.Keys)}]");
+                AppLog.Detail(LogArea.Render, $"Node {nc.type} has fields: [{string.Join(", ", nc.values.Keys)}]");
 
             if (nc.values.TryGetValue(xField, out var xVal) && nc.values.TryGetValue(yField, out var yVal))
             {
@@ -841,11 +854,11 @@ public class GraphVisualizer : MonoBehaviour, InterfaceGraphVisualizer
                 isVisible = visiblePoints.Contains(key);
 
                 if (shownCount + hiddenCount < 5)
-                    Debug.Log($"Checking {nc.type}: key='{key}', visible={isVisible}");
+                    AppLog.Detail(LogArea.Render, $"Checking {nc.type}: key='{key}', visible={isVisible}");
             }
             else if (shownCount + hiddenCount < 3)
             {
-                Debug.Log($"Node missing xField='{xField}' or yField='{yField}'");
+                AppLog.Detail(LogArea.Render, $"Node missing xField='{xField}' or yField='{yField}'");
             }
         }
 
@@ -875,33 +888,32 @@ public class GraphVisualizer : MonoBehaviour, InterfaceGraphVisualizer
     {
         foreach (var kvp in nodes)
         {
-            SetNodeAndLabelVisibility(kvp.Key, kvp.Value, true);
+            // A node with no pin (e.g. outside an explicit Y domain) stays hidden.
+            var nc = kvp.Value.GetComponent<NodeComponent>();
+            SetNodeAndLabelVisibility(kvp.Key, kvp.Value, nc == null || nc.xy != null);
         }
-        Debug.Log(" ShowAllNodes: all nodes and labels visible");
+        AppLog.Detail(LogArea.Render, "ShowAllNodes: all drawn nodes and labels visible");
     }
 
-    /// <summary>
-    /// Update viewport overlay to show current data windowing state.
-    /// Draws a rectangle showing the visible portion of the full dataset.
-    /// </summary>
-    public void UpdateViewportOverlay(int windowStart, int windowSize, int totalDataPoints,
+    /// <summary>Draw a rectangle showing which part of the full dataset is in the window.</summary>
+    public void UpdateWindowOverlay(int windowStart, int windowSize, int totalDataPoints,
         float windowYMin, float windowYMax, float dataYMin, float dataYMax)
     {
-        if (_viewportOverlay != null)
-            Destroy(_viewportOverlay);
+        if (_windowOverlay != null)
+            Destroy(_windowOverlay);
 
-        _viewportOverlay = new GameObject("ViewportOverlay");
-        _viewportOverlay.transform.SetParent(transform);
+        _windowOverlay = new GameObject("WindowOverlay");
+        _windowOverlay.transform.SetParent(transform);
 
-        _viewportLineRenderer = _viewportOverlay.AddComponent<LineRenderer>();
-        _viewportLineRenderer.material = new Material(Shader.Find("Sprites/Default"));
-        _viewportLineRenderer.startColor = Color.cyan;
-        _viewportLineRenderer.endColor = Color.cyan;
-        _viewportLineRenderer.startWidth = 0.002f;
-        _viewportLineRenderer.endWidth = 0.002f;
-        _viewportLineRenderer.positionCount = 5;
-        _viewportLineRenderer.useWorldSpace = false;
-        _viewportLineRenderer.loop = true;
+        _windowLineRenderer = _windowOverlay.AddComponent<LineRenderer>();
+        _windowLineRenderer.material = new Material(Shader.Find("Sprites/Default"));
+        _windowLineRenderer.startColor = Color.cyan;
+        _windowLineRenderer.endColor = Color.cyan;
+        _windowLineRenderer.startWidth = 0.002f;
+        _windowLineRenderer.endWidth = 0.002f;
+        _windowLineRenderer.positionCount = 5;
+        _windowLineRenderer.useWorldSpace = false;
+        _windowLineRenderer.loop = true;
 
         float xMin = 0f, xMax = NORMALIZATION_RANGE;
         float yMin = 0f, yMax = NORMALIZATION_RANGE;
@@ -933,9 +945,9 @@ public class GraphVisualizer : MonoBehaviour, InterfaceGraphVisualizer
         corners[3] = new Vector3(xMin, yMax, 0.001f) * scale + offset;
         corners[4] = corners[0];
 
-        _viewportLineRenderer.SetPositions(corners);
+        _windowLineRenderer.SetPositions(corners);
 
-        Debug.Log($"Viewport overlay: X=[{windowStart}, {windowStart + windowSize}]/{totalDataPoints}, Y=[{windowYMin:F2}, {windowYMax:F2}]/[{dataYMin:F2}, {dataYMax:F2}]");
+        AppLog.Detail(LogArea.Render, $"Window overlay: X=[{windowStart}, {windowStart + windowSize}]/{totalDataPoints}, Y=[{windowYMin:F2}, {windowYMax:F2}]/[{dataYMin:F2}, {dataYMax:F2}]");
     }
 
     [System.Serializable]

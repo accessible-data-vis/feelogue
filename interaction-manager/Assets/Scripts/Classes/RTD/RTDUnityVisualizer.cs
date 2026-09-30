@@ -81,7 +81,7 @@ public class RTDUnityVisualizer
             _dotLookup[child.name.Trim()] = parts;
         }
 
-        Debug.Log($"[Visualizer] Initialized {_dotLookup.Count} pins");
+        AppLog.Detail(LogArea.Render, $"Initialized {_dotLookup.Count} pins");
     }
 
     // ===== Full Refresh =====
@@ -104,7 +104,7 @@ public class RTDUnityVisualizer
                 }
             }
         }
-        Debug.Log($"[RefreshFromBase] Built axis cache: {_axisCoords.Count} axis pins (BaseImage value=1)");
+        AppLog.Detail(LogArea.Render, $"[RefreshFromBase] Built axis cache: {_axisCoords.Count} axis pins (BaseImage value=1)");
 
         // Refresh all pins
         for (int y = 0; y < RTDConstants.PIXEL_ROWS; y++)

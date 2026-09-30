@@ -58,9 +58,12 @@ public class AgentResponseHandler : MonoBehaviour
         _mqttManager.MessageReceived += OnMQTTMessage;
     }
 
+    // ===== Speech input =====
+
     private void OnWakeWordDetected()
     {
-        UnityEngine.Debug.Log("Detected Wake Word!");
+        AppLog.Info(LogArea.Agent, "Detected Wake Word!");
+        _rtdUpdater.CancelPendingPresentation();   // starting to ask counts as input
         _audioToneManager.PlayStartTone();
         _agentWakeWord.PauseWakeWord();
         _speechToText.StartSpeechRecognition(transcript => OnSpeechResult(transcript, true), true, "", OnRecognitionComplete);
@@ -73,7 +76,7 @@ public class AgentResponseHandler : MonoBehaviour
 
     private void OnSpeechResult(string transcript, bool fromWakeWord)
     {
-        UnityEngine.Debug.Log($"Speech Recognized: {transcript}");
+        AppLog.Info(LogArea.Agent, $"Speech Recognized: {transcript}");
 
         if (IsTranscriptCancelled(transcript))
         {
@@ -98,7 +101,7 @@ public class AgentResponseHandler : MonoBehaviour
             BlinkCursor();
 
         string combinedMessageJson = ComposeCombinedMessage(parsedTranscript);
-        UnityEngine.Debug.Log($"Final Combined Message: {combinedMessageJson}");
+        AppLog.Detail(LogArea.Agent, $"Final Combined Message: {combinedMessageJson}");
 
         if (_speechToText.GetSkipStatus())
             HandleSkippedMessage();
@@ -145,7 +148,7 @@ public class AgentResponseHandler : MonoBehaviour
                 _rtdUpdater.PulsePins(nodePosition, 1.0f, -1f);
                 break;
         }
-        UnityEngine.Debug.Log("Blinking command sent to start cursor");
+        AppLog.Detail(LogArea.Agent, "Blinking command sent to start cursor");
     }
 
     private void HandleCancelledTranscript()
@@ -156,14 +159,14 @@ public class AgentResponseHandler : MonoBehaviour
 
     private void OnRecognitionComplete()
     {
-        UnityEngine.Debug.Log("Speech-to-Text Finished.");
+        AppLog.Detail(LogArea.Speech, "Speech-to-Text Finished.");
         _agentWakeWord.ResumeWakeWord();
     }
 
     private string ComposeCombinedMessage(JObject parsedTranscript)
     {
-        bool bothAnchored = HasValidTouchData(leftPositionReport) && HasValidTouchData(rightPositionReport);
-
+        // Touches and the navigation highlight all go to the agent, each with a
+        // timestamp: "this" means the newest, "these" means all of them.
         var combinedMessage = new
         {
             user_request_for_agent = new
@@ -174,29 +177,24 @@ public class AgentResponseHandler : MonoBehaviour
                     left_touch = GetTouchData(leftPositionReport),
                     right_touch = GetTouchData(rightPositionReport)
                 },
-                highlighted_context = bothAnchored ? (object)"No highlight" : GetHighlightedContext()
+                highlighted_context = GetHighlightedContext(),
+                // So a question that names no series is about the layer on the display.
+                presentation = vegaChartLoader != null ? vegaChartLoader.CurrentPresentationLayer() : null
             }
         };
         return JsonConvert.SerializeObject(combinedMessage, Formatting.Indented);
-    }
-
-    private bool HasValidTouchData(PositionReport positionReport)
-    {
-        if (positionReport == null) return false;
-        var touchDataJson = positionReport.GetLastTouchData();
-        return !string.IsNullOrEmpty(touchDataJson) && touchDataJson.StartsWith("{");
     }
 
     private object GetTouchData(PositionReport positionReport)
     {
         if (positionReport == null)
         {
-            UnityEngine.Debug.Log("GetTouchData: positionReport is null");
+            AppLog.Detail(LogArea.Agent, "GetTouchData: positionReport is null");
             return "No touch";
         }
 
         var touchDataJson = positionReport.GetLastTouchData();
-        UnityEngine.Debug.Log($"GetTouchData: touchDataJson = {(string.IsNullOrEmpty(touchDataJson) ? "EMPTY" : touchDataJson.Substring(0, Math.Min(50, touchDataJson.Length)))}...");
+        AppLog.Detail(LogArea.Agent, $"GetTouchData: touchDataJson = {(string.IsNullOrEmpty(touchDataJson) ? "EMPTY" : touchDataJson.Substring(0, Math.Min(50, touchDataJson.Length)))}...");
 
         if (string.IsNullOrEmpty(touchDataJson) || !touchDataJson.StartsWith("{"))
             return "No touch";
@@ -206,7 +204,7 @@ public class AgentResponseHandler : MonoBehaviour
 
     private object GetHighlightedContext()
     {
-        // Only include navigation highlights (NOT gesture highlights)
+        // Navigation highlights only (gesture highlights go in touchdata)
         // Gesture highlights should appear in touchdata instead
         var navPoint = _rtdUpdater.GetHighlightedPoint();
         bool isFromNavigation = _rtdUpdater.IsHighlightFromNavigation();
@@ -214,11 +212,10 @@ public class AgentResponseHandler : MonoBehaviour
         if (!navPoint.HasValue || !isFromNavigation)
             return "No highlight";
 
-        var navNodes = _graphVisualizer.GetMatchingNodes(new HashSet<Vector2Int> { navPoint.Value });
-        if (navNodes.Count == 0)
+        // Use the node itself: an axis tick or another series can share its pin.
+        var node = _rtdUpdater.GetHighlightedNode();
+        if (node == null)
             return "No highlight";
-
-        var node = navNodes[0];
         return new
         {
             node_count = 1,
@@ -231,7 +228,9 @@ public class AgentResponseHandler : MonoBehaviour
                     probability = 1.0,
                     source = "navigation"
                 }
-            }
+            },
+            // Like touch_timestamp, so the agent can rank referents by recency.
+            highlight_timestamp = _rtdUpdater.GetHighlightAnchoredAtMs()
         };
     }
 
@@ -247,22 +246,51 @@ public class AgentResponseHandler : MonoBehaviour
 
     private void HandleSkippedMessage()
     {
-        UnityEngine.Debug.Log("[SKIP] Skipping message send due to 'skip' transcript.");
+        AppLog.Info(LogArea.Agent, "Skipping message send due to 'skip' transcript.");
         _speechToText.SetSkipStatus(false);
     }
 
     private void PublishAndReset(string messageJson)
     {
         _mqttManager.PublishInteraction(messageJson);
-        // Don't reset touch data here - let it persist for follow-up questions
-        // It will be reset when a new gesture occurs (HandleDoubleTapResponse)
+        // Touch data is kept here so a follow-up can refer to the same point. It is
+        // cleared after the reply (FinishRTDCommand), on a chart switch, or by the
+        // next double tap.
     }
+
+    // ===== Agent replies =====
 
     private void OnMQTTMessage(string topic, string payload)
     {
         if (topic == "agent_out")
         {
+            // Generated layer text for the presentation, not a reply.
+            if (payload.Contains("\"chart_overview_for_rtd\""))
+            {
+                HandleGeneratedOverview(payload);
+                return;
+            }
             HandleAgentOutput(payload);
+        }
+    }
+
+    private void HandleGeneratedOverview(string payload)
+    {
+        try
+        {
+            var msg = JObject.Parse(payload)["chart_overview_for_rtd"];
+            string dataName = msg?["data_name"]?.ToString();
+            string chartType = msg?["chart_type"]?.ToString();
+            // Null means the agent found nothing to describe.
+            var overviewToken = msg?["overview"];
+            var overview = overviewToken == null || overviewToken.Type == JTokenType.Null
+                ? null : overviewToken.ToObject<Dictionary<string, string>>();
+            if (vegaChartLoader != null)
+                vegaChartLoader.SetGeneratedOverview(dataName, chartType, overview);
+        }
+        catch (Exception ex)
+        {
+            UnityEngine.Debug.LogWarning($"[Overview] Could not read generated overview: {ex.Message}");
         }
     }
 
@@ -271,33 +299,54 @@ public class AgentResponseHandler : MonoBehaviour
         try
         {
             _lastAgentResponseJson = JObject.Parse(payload);
-            _rtdUpdater.StopPulsePins();
-            UnityEngine.Debug.Log("Blinking command sent to stop cursor");
+            _rtdUpdater.StopAgentHighlights();   // thinking blink and the previous answer's boxes
+            AppLog.Detail(LogArea.Agent, "Blinking command sent to stop cursor");
+            // A reply cancels a presentation still waiting to start. A load below
+            // can request a new one.
+            _rtdUpdater.CancelPendingPresentation();
 
+            var reply = _lastAgentResponseJson["agent_response_for_user"];
             string responseText = ExtractResponseText(_lastAgentResponseJson);
 
-            string rtdCommand = _lastAgentResponseJson["agent_response_for_user"]?["rtd_command"]?.ToString()?.Trim() ?? "0";
-            bool followupStage = _lastAgentResponseJson["agent_response_for_user"]?["followup_stage"]?.ToObject<bool>() ?? false;
-            UnityEngine.Debug.Log("RTD Command " + rtdCommand);
-            UnityEngine.Debug.Log("Response_Text " + responseText);
+            string rtdCommand = reply?["rtd_command"]?.ToString()?.Trim() ?? "0";
+            bool followupStage = reply?["followup_stage"]?.ToObject<bool>() ?? false;
+            string presentation = reply?["presentation"]?.ToString();
+            AppLog.Detail(LogArea.Agent, "RTD Command " + rtdCommand);
+            AppLog.Info(LogArea.Agent, "Reply: " + responseText);
+
+            // "skip": the rest of the request follows as its own reply, so this load
+            // doesn't start the presentation.
+            if (presentation == "skip" && vegaChartLoader != null)
+                vegaChartLoader.SuppressNextAutoStart();
+
+            // Display changes first, since a redraw clears highlights.
+            ApplyDisplayCommand(rtdCommand);
+            // If the load didn't happen, the suppression mustn't carry over to the next one.
+            if (presentation == "skip" && vegaChartLoader != null)
+                vegaChartLoader.AllowAutoStart();
+            RevealAnswerSeries(reply?["nodes"] as JObject);
 
             if (!string.IsNullOrEmpty(responseText))
             {
                 if (followupStage && _buttonGUI.GetFollowUpMode())
                 {
-                    UnityEngine.Debug.Log("Follow-up detected - delaying agent reinvoke until TTS completes...");
+                    AppLog.Info(LogArea.Agent, "Follow-up detected - delaying agent reinvoke until TTS completes...");
                     HandleTextToSpeech(responseText, () =>
                     {
-                        UnityEngine.Debug.Log("TTS finished. Starting follow-up recording...");
+                        AppLog.Info(LogArea.Agent, "TTS finished. Starting follow-up recording...");
                         OnWakeWordDetected();
-                        HandleRTDCommand(rtdCommand, _lastAgentResponseJson);  // reset AFTER recording starts
+                        // Keep the touched point for the follow-up question.
+                        FinishRTDCommand(rtdCommand, preserveTouchContext: true);
                     });
                 }
                 else
                 {
                     HandleTextToSpeech(responseText);
-                    HandleRTDCommand(rtdCommand, _lastAgentResponseJson);
+                    FinishRTDCommand(rtdCommand);
                 }
+                // Starts once this reply has been spoken.
+                if (presentation == "start" && vegaChartLoader != null)
+                    vegaChartLoader.RequestPresentation();
             }
             else
             {
@@ -341,7 +390,7 @@ public class AgentResponseHandler : MonoBehaviour
 
     private void HandleTextToSpeech(string responseText, Action onComplete = null)
     {
-        UnityEngine.Debug.Log($"[TTS] Extracted response_text: {responseText}");
+        AppLog.Detail(LogArea.Agent, $"Extracted response_text: {responseText}");
 
         if (_buttonGUI.GetWaitToneMode())
             _audioToneManager.StopWaitTone();
@@ -349,129 +398,137 @@ public class AgentResponseHandler : MonoBehaviour
         _chunkingController.ProcessText(_lastAgentResponseJson, responseText, onComplete);
     }
 
-    private void HandleRTDCommand(string rtdCommand, JObject json)
+    private static JObject ParseCommand(string rtdCommand)
     {
+        if (!rtdCommand.StartsWith("{")) return null;
+        try { return JObject.Parse(rtdCommand); } catch (Exception) { return null; }
+    }
+
+    /// <summary>Apply a filter or chart load from the reply.</summary>
+    private void ApplyDisplayCommand(string rtdCommand)
+    {
+        if (rtdCommand.StartsWith("{"))
+        {
+            if (ParseCommand(rtdCommand)?["filter"] is JObject filter && vegaChartLoader != null)
+            {
+                vegaChartLoader.SetAgentFilter(filter["hidden_series"]?.ToObject<List<string>>() ?? new List<string>());
+                // Ending the presentation shows the new filter.
+                if (_buttonGUI.GetOverviewMode()) _buttonGUI.SetOverviewMode(false);
+                else vegaChartLoader.ShowAgentFilter();
+            }
+            return;
+        }
         if (rtdCommand.Contains("-"))
         {
-            UnityEngine.Debug.Log("[CHART] Chart command detected, delegating to ButtonGUI");
+            AppLog.Detail(LogArea.Agent, "Chart command detected, delegating to ButtonGUI");
+            // A load clears touch data itself (SelectGraphOption); an unknown chart
+            // leaves the old one up, so its touch data stays valid.
             _buttonGUI.HandleChartCommand(rtdCommand);
-        }
-        else
-        {
-            ResetTouchData();
         }
     }
 
-    private void ResetTouchData()
+    /// <summary>Clear the stored touch data after a reply, unless it should be kept.</summary>
+    private void FinishRTDCommand(string rtdCommand, bool preserveTouchContext = false)
+    {
+        if (rtdCommand.StartsWith("{"))
+        {
+            // A filter keeps the touched referent; any other command clears it.
+            if (!(ParseCommand(rtdCommand)?["filter"] is JObject))
+                ResetTouchData();
+            return;
+        }
+        if (rtdCommand.Contains("-")) return;   // see ApplyDisplayCommand
+        if (!preserveTouchContext)
+            ResetTouchData();
+    }
+
+    /// <summary>During the presentation, show the series an answer points at.</summary>
+    private void RevealAnswerSeries(JObject nodes)
+    {
+        if (nodes == null || vegaChartLoader == null || !_rtdUpdater.IsPresentationActive) return;
+        var ids = new List<string>();
+        var series = new List<string>();
+        foreach (var node in nodes.Properties())
+        {
+            if (node.Value is not JObject nodeObj) continue;
+            string id = nodeObj["id"]?.ToString();
+            if (!string.IsNullOrEmpty(id)) ids.Add(id);
+            // Nodes without an id can still name their series.
+            foreach (var prop in nodeObj.Properties())
+            {
+                string value = prop.Value?.ToString();
+                if (!string.IsNullOrEmpty(value) && vegaChartLoader.availableSeries.Contains(value))
+                    series.Add(value);
+            }
+        }
+        vegaChartLoader.RevealSeriesFor(ids, series);
+    }
+
+    /// <summary>Clear both hands' stored touch data (also done on a chart switch).</summary>
+    public void ResetTouchData()
     {
         leftPositionReport?.ResetLastTouchData();
         rightPositionReport?.ResetLastTouchData();
     }
 
-    private void HandleNodePulsing(JObject json, string text, bool strictToChunk)
+    // ===== Highlights =====
+
+    private void HandleNodePulsing(JObject json, string text, int chunkIndex)
     {
         var nodes = json["agent_response_for_user"]?["nodes"] as JObject;
-        var matchedCoords = new List<Vector2Int>();
-
-        if (nodes == null || string.IsNullOrEmpty(text))
+        if (nodes == null)
         {
-            UnityEngine.Debug.LogWarning("No nodes or reference text to match against.");
+            // Normal for replies that highlight nothing (e.g. confirming a chart load).
+            AppLog.Detail(LogArea.Agent, "Reply has no points to highlight.");
             return;
         }
 
-        string normalizedRef = NormalizeForMatch(text);
+        // Only drawn pins: off-screen and hidden nodes have no pin position.
+        var dataPins = _graphVisualizer.GetNodes().Values
+            .Select(go => go != null ? go.GetComponent<NodeComponent>() : null)
+            .Where(nc => nc != null && nc.type == "data-point" && nc.visibility
+                         && nc.values != null && nc.xy != null && nc.xy.Length == 2)
+            .ToList();
+        var matchedCoords = new List<Vector2Int>();
 
         foreach (var node in nodes)
         {
-            var nodeObj = (JObject)node.Value;
-
-            var xValue = nodeObj["x"]?.ToString();
-            var yValue = nodeObj["y"]?.ToString();
-            var zValue = nodeObj["z"]?.ToString();
-
-            UnityEngine.Debug.Log($"[NODE] Agent node: x={xValue ?? "null"}, y={yValue ?? "null"}, z={zValue ?? "null"}");
-
-            // Need at least one field to match
-            if (xValue == null && yValue == null && zValue == null) continue;
-
-            // In chunk mode, skip if none of the provided values appear in the chunk text
-            if (strictToChunk)
+            if (node.Value is not JObject nodeObj)
             {
-                var termsList = new[] { xValue, yValue, zValue }.Where(v => v != null).Select(v => NormalizeForMatch(v));
-                bool mentionedInChunk = termsList.Any(t => normalizedRef.Contains(t));
-                if (!mentionedInChunk)
+                UnityEngine.Debug.LogWarning($"[NODE] Node '{node.Key}' is not an object - skipped");
+                continue;
+            }
+
+            string nodeDesc = string.Join(", ", nodeObj.Properties().Select(p => $"{p.Name}={p.Value?.ToString() ?? "null"}"));
+            AppLog.Detail(LogArea.Agent, $"Agent node: {nodeDesc}");
+
+            // Each node belongs to the chunk that mentions it. Nodes without one stay
+            // lit for the whole answer; chunkIndex -1 means no chunks.
+            if (chunkIndex >= 0)
+            {
+                var chunkToken = nodeObj["chunk"];
+                if (chunkToken != null && chunkToken.Type == JTokenType.Integer && (int)chunkToken != chunkIndex)
                 {
-                    UnityEngine.Debug.Log($"[NODE] Skipping node x={xValue}, y={yValue}, z={zValue} - not in chunk");
+                    AppLog.Detail(LogArea.Agent, $"Skipping node {nodeDesc} - assigned to chunk {(int)chunkToken}, playing {chunkIndex}");
                     continue;
                 }
             }
 
-            // Search all data-point nodes -- match by whatever fields the agent provided
-            var allNodes = _graphVisualizer.GetNodes();
-            bool matchedAny = false;
+            // Match by row id when there is one, otherwise by value.
+            string id = nodeObj["id"]?.ToString();
+            var hits = !string.IsNullOrEmpty(id)
+                ? dataPins.Where(nc => nc.values.TryGetValue(VegaChartLoader.RowIdField, out var v) && v?.ToString() == id).ToList()
+                : dataPins.Where(nc => MatchesNodeValues(nc, nodeObj)).ToList();
 
-            foreach (var kvp in allNodes)
+            if (hits.Count == 0)
             {
-                var nc = kvp.Value.GetComponent<NodeComponent>();
-                // Future: support "type": "axis" in agent node to match axis ticks instead
-                if (nc == null || !nc.id.StartsWith("data-point") || nc.values == null) continue;
-
-                bool matches = true;
-                int fieldsMatched = 0;
-
-                // x: match against any string value in the node
-                if (xValue != null)
-                {
-                    bool xFound = nc.values.Any(v => v.Value?.ToString() == xValue);
-                    if (!xFound) { matches = false; }
-                    else fieldsMatched++;
-                }
-
-                // y: match as numeric (float comparison) against any numeric value
-                if (yValue != null && matches)
-                {
-                    if (float.TryParse(yValue, System.Globalization.NumberStyles.Any,
-                        System.Globalization.CultureInfo.InvariantCulture, out float yNum))
-                    {
-                        bool yFound = nc.values.Any(v =>
-                        {
-                            if (v.Value == null) return false;
-                            if (float.TryParse(v.Value.ToString(), System.Globalization.NumberStyles.Any,
-                                System.Globalization.CultureInfo.InvariantCulture, out float nv))
-                                return Mathf.Approximately(nv, yNum);
-                            return false;
-                        });
-                        if (!yFound) { matches = false; }
-                        else fieldsMatched++;
-                    }
-                    else
-                    {
-                        // y is a string -- match as string
-                        bool yFound = nc.values.Any(v => v.Value?.ToString() == yValue);
-                        if (!yFound) { matches = false; }
-                        else fieldsMatched++;
-                    }
-                }
-
-                // z: match against any string value (typically series/color field)
-                if (zValue != null && matches)
-                {
-                    bool zFound = nc.values.Any(v => v.Value?.ToString() == zValue);
-                    if (!zFound) { matches = false; }
-                    else fieldsMatched++;
-                }
-
-                if (matches && fieldsMatched > 0 && nc.xy != null && nc.xy.Length == 2)
-                {
-                    matchedCoords.Add(new Vector2Int(nc.xy[0], nc.xy[1]));
-                    UnityEngine.Debug.Log($"[NODE] Matched {nc.id}: x={xValue}, y={yValue}, z={zValue} -> ({nc.xy[0]},{nc.xy[1]})");
-                    matchedAny = true;
-                }
+                UnityEngine.Debug.LogWarning($"[NODE] No visible pin for agent node: {nodeDesc}");
+                continue;
             }
-
-            if (!matchedAny)
+            foreach (var nc in hits)
             {
-                UnityEngine.Debug.LogWarning($"[NODE] No match for agent node: x={xValue}, y={yValue}, z={zValue}");
+                matchedCoords.Add(new Vector2Int(nc.xy[0], nc.xy[1]));
+                AppLog.Detail(LogArea.Agent, $"Matched {nc.id} -> ({nc.xy[0]},{nc.xy[1]})");
             }
         }
 
@@ -487,10 +544,40 @@ public class AgentResponseHandler : MonoBehaviour
         }
     }
 
-    private string NormalizeForMatch(string text)
+    /// <summary>
+    /// Match a node without a row id by value. "x" and "y" can match any pin value;
+    /// other keys must match that field.
+    /// </summary>
+    private static bool MatchesNodeValues(NodeComponent nc, JObject nodeObj)
     {
-        var norm = new string((text ?? string.Empty).Where(c => char.IsLetterOrDigit(c) || char.IsWhiteSpace(c) || c == '.' || c == ',' || c == '%').ToArray()).ToLowerInvariant();
-        return string.Join(" ", norm.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries));
+        int compared = 0;
+        foreach (var prop in nodeObj.Properties())
+        {
+            if (prop.Name == "chunk" || prop.Name == "id") continue;
+            string want = prop.Value?.ToString();
+            if (string.IsNullOrEmpty(want)) continue;
+
+            bool found = (prop.Name == "x" || prop.Name == "y" || !nc.values.ContainsKey(prop.Name))
+                ? nc.values.Values.Any(v => ValueEquals(v, want))
+                : ValueEquals(nc.values[prop.Name], want);
+            if (!found) return false;
+            compared++;
+        }
+        return compared > 0;
+    }
+
+    private static bool ValueEquals(object have, string want)
+    {
+        if (have == null) return false;
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        // Dates arrive from the spec as DateTime; the agent sends ISO text.
+        if (have is DateTime dt)
+            return want.StartsWith(dt.ToString("yyyy-MM-dd", inv));
+        string text = Convert.ToString(have, inv);
+        if (double.TryParse(text, System.Globalization.NumberStyles.Any, inv, out double a) &&
+            double.TryParse(want, System.Globalization.NumberStyles.Any, inv, out double b))
+            return Math.Abs(a - b) < 1e-6 * Math.Max(1.0, Math.Abs(b));
+        return text == want;
     }
 
     public void HandleBlinkResponse(Vector2Int coord)
@@ -502,16 +589,15 @@ public class AgentResponseHandler : MonoBehaviour
     private void HandleMissingResponseText()
     {
         UnityEngine.Debug.LogWarning("response_text not found in the received JSON.");
+        // HandleTextToSpeech isn't called here, so stop the wait tone.
+        if (_buttonGUI.GetWaitToneMode())
+            _audioToneManager.StopWaitTone();
         _textToSpeech.ConvertTextToSpeech(FALLBACK_SPEECH, speechSettings, null);
     }
 
-    public void AdvanceToNextChunk()
-    {
-        _chunkingController.AdvanceToNextChunk();
-    }
+    /// <summary>Play the next answer chunk; false at the last one.</summary>
+    public bool AdvanceToNextChunk() => _chunkingController.AdvanceToNextChunk();
 
-    public void StepBackInChunk()
-    {
-        _chunkingController.StepBackInChunk();
-    }
+    /// <summary>Play the previous answer chunk; false at the first one.</summary>
+    public bool StepBackInChunk() => _chunkingController.StepBackInChunk();
 }

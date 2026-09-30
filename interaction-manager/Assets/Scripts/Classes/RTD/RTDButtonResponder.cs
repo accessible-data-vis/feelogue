@@ -46,6 +46,9 @@ public class RTDButtonResponder : MonoBehaviour, InterfaceRTDButtonResponder
 
     private Dictionary<int, FunctionButtonConfig> _functionConfigs;
 
+    // Pan taps and pan + F1 step through the braille text.
+    private BrailleTextNavigator _textNav;
+
     private class PanModifierState
     {
         public bool IsPressed;
@@ -91,7 +94,12 @@ public class RTDButtonResponder : MonoBehaviour, InterfaceRTDButtonResponder
         {
             [1] = new FunctionButtonConfig
             {
-                HasAgentHold = true
+                HasAgentHold = true,
+                // Pan held, then F1: skip a whole chunk or layer.
+                PanLeftAction = () => _textNav.Skip(-1),
+                PanLeftLog = "Pan Left + F1: previous chunk or layer",
+                PanRightAction = () => _textNav.Skip(+1),
+                PanRightLog = "Pan Right + F1: next chunk or layer"
             },
             [2] = new FunctionButtonConfig
             {
@@ -99,7 +107,7 @@ public class RTDButtonResponder : MonoBehaviour, InterfaceRTDButtonResponder
                 {
                     _speechToText.CancelSpeechRecognition();
                     _agentWakeWord.StopAudio();
-                    _rtdUpdater.StopPulsePins();
+                    _rtdUpdater.StopAgentHighlights();   // refresh (F4) clears the user's boxes too
                 },
                 StandaloneLog = "Stop all audio..."
             },
@@ -116,15 +124,19 @@ public class RTDButtonResponder : MonoBehaviour, InterfaceRTDButtonResponder
         };
     }
 
+    void Start()
+    {
+        _textNav = new BrailleTextNavigator(_rtdUpdater, _agentResponseHandler);
+    }
+
     void OnEnable()
     {
         _rtdUpdater.ButtonPacketReceived += _rtdButtonParser.ProcessButtonPacket;
 
-        _rtdButtonParser.PanNextPressedImmediate += PanNextStart;
+        _rtdButtonParser.PanNextPressed += PanNextStart;
         _rtdButtonParser.PanNextReleased += PanNextStop;
-        _rtdButtonParser.PanPrevPressedImmediate += PanPrevStart;
+        _rtdButtonParser.PanPrevPressed += PanPrevStart;
         _rtdButtonParser.PanPrevReleased += PanPrevStop;
-        _rtdButtonParser.BothPanButtonsPressed += OnBothPanPressed;
 
 
         _rtdButtonParser.Function1Pressed += OnFunction1Press;
@@ -137,11 +149,10 @@ public class RTDButtonResponder : MonoBehaviour, InterfaceRTDButtonResponder
     void OnDisable()
     {
         _rtdUpdater.ButtonPacketReceived -= _rtdButtonParser.ProcessButtonPacket;
-        _rtdButtonParser.PanNextPressedImmediate -= PanNextStart;
+        _rtdButtonParser.PanNextPressed -= PanNextStart;
         _rtdButtonParser.PanNextReleased -= PanNextStop;
-        _rtdButtonParser.PanPrevPressedImmediate -= PanPrevStart;
+        _rtdButtonParser.PanPrevPressed -= PanPrevStart;
         _rtdButtonParser.PanPrevReleased -= PanPrevStop;
-        _rtdButtonParser.BothPanButtonsPressed -= OnBothPanPressed;
 
         _rtdButtonParser.Function1Pressed -= OnFunction1Press;
         _rtdButtonParser.Function1Released -= OnFunction1Release;
@@ -152,6 +163,14 @@ public class RTDButtonResponder : MonoBehaviour, InterfaceRTDButtonResponder
 
     private void PanNextStart()
     {
+        _rtdUpdater.CancelPendingPresentation();
+        if (TrySkipAfterF1(_panNextState, +1)) return;
+        if (_panPrevState.IsPressed)
+        {
+            HandlePanChord(_panPrevState, "Pan Left", forward: true);
+            return;
+        }
+
         _panNextState.IsPressed = true;
         _panNextState.PressTime = Time.time;
         _panNextState.ModifierModeActive = false;
@@ -172,25 +191,25 @@ public class RTDButtonResponder : MonoBehaviour, InterfaceRTDButtonResponder
 
 
         // Skip processing if state wasn't properly initialized (e.g., after chunk toggle)
-        if (_panNextState.PressTime == 0)
+        if (_panNextState.PressTime == 0 || _panNextState.CombinationUsed)
         {
             _panNextState.Reset();
             return;
         }
         
         float holdDuration = Time.time - _panNextState.PressTime;
-        Debug.Log($"Pan Right hold duration: {holdDuration:F3}s (threshold: {PAN_MODIFIER_THRESHOLD}s)");
+        AppLog.Detail(LogArea.Buttons, $"Pan Right hold duration: {holdDuration:F3}s (threshold: {PAN_MODIFIER_THRESHOLD}s)");
         
         if (holdDuration < PAN_MODIFIER_THRESHOLD)
         {
-            // STATE 1: Quick tap → page braille
-            Debug.Log("Pan Right tapped - paging braille right");
-            _rtdUpdater.NextBraillePage();
+            // STATE 1: Quick tap → next line, chunk or layer
+            AppLog.Info(LogArea.Buttons, "Pan Right tapped - reading on");
+            _textNav.Next();
         }
         else if (!_panNextState.CombinationUsed)
         {
             // STATE 2: Hold without function -> navigate to next data point
-            Debug.Log("Pan Right held and released - next data point");
+            AppLog.Info(LogArea.Buttons, "Pan Right held and released - next data point");
             _rtdUpdater.NavigateNextDataPoint();
         }
         
@@ -200,6 +219,14 @@ public class RTDButtonResponder : MonoBehaviour, InterfaceRTDButtonResponder
 
     private void PanPrevStart()
     {
+        _rtdUpdater.CancelPendingPresentation();
+        if (TrySkipAfterF1(_panPrevState, -1)) return;
+        if (_panNextState.IsPressed)
+        {
+            HandlePanChord(_panNextState, "Pan Right", forward: false);
+            return;
+        }
+
         _panPrevState.IsPressed = true;
         _panPrevState.PressTime = Time.time;
         _panPrevState.ModifierModeActive = false;
@@ -218,7 +245,7 @@ public class RTDButtonResponder : MonoBehaviour, InterfaceRTDButtonResponder
             _panPrevState.ModifierCoroutine = null; 
         }
 
-        if (_panPrevState.PressTime == 0f)
+        if (_panPrevState.PressTime == 0f || _panPrevState.CombinationUsed)
         {
             _panPrevState.Reset();
             return;
@@ -228,14 +255,14 @@ public class RTDButtonResponder : MonoBehaviour, InterfaceRTDButtonResponder
         
         if (holdDuration < PAN_MODIFIER_THRESHOLD)
         {
-            // STATE 1: Quick tap → page braille
-            Debug.Log("Pan Left tapped - paging braille left");
-            _rtdUpdater.PrevBraillePage();
+            // STATE 1: Quick tap → previous line, chunk or layer
+            AppLog.Info(LogArea.Buttons, "Pan Left tapped - reading back");
+            _textNav.Prev();
         }
         else if (!_panPrevState.CombinationUsed)
         {
             // STATE 2: Hold without function -> navigate to previous data point
-            Debug.Log("Pan Left held and released - prev data point");
+            AppLog.Info(LogArea.Buttons, "Pan Left held and released - prev data point");
             _rtdUpdater.NavigatePrevDataPoint();
         }
         // STATE 3: Combination was used - action already triggered
@@ -247,72 +274,60 @@ public class RTDButtonResponder : MonoBehaviour, InterfaceRTDButtonResponder
     {
         yield return new WaitForSeconds(PAN_MODIFIER_THRESHOLD);
         state.ModifierModeActive = true;
-        Debug.Log($"{panName} modifier mode activated");
+        AppLog.Detail(LogArea.Buttons, $"{panName} modifier mode activated");
     }
     
-    private void OnBothPanPressed()
+    /// <summary>
+    /// Both pans down: reserved, nothing fires. The held key is marked used so neither
+    /// release pages braille or steps a data point.
+    /// </summary>
+    private void HandlePanChord(PanModifierState held, string heldName, bool forward)
     {
-        // Check if Left is already held (modifier active) - then Right was pressed second
-        if (_panPrevState.IsPressed && (_panPrevState.ModifierModeActive || Time.time - _panPrevState.PressTime >= PAN_MODIFIER_THRESHOLD))
-        {
-            if (_buttonGUI.GetOverviewMode())
-            {
-                Debug.Log("LEFT+RIGHT: Next Overview Layer");
-                _rtdUpdater.NextOverviewLayer();
-            }
-            else
-            {
-                Debug.Log("LEFT+RIGHT: Advance to next chunk");
-                _agentResponseHandler.AdvanceToNextChunk();
-            }
-            PromoteModifier(_panPrevState, "Pan Left");
-            _panPrevState.Reset();
-            return;
-        }
+        // PromoteModifier also stops the held key's pending modifier timer, so
+        // a stale timer can't flag a later press as a hold.
+        PromoteModifier(held, heldName);
+        AppLog.Info(LogArea.Buttons, "Both pans pressed: reserved, nothing fires");
+    }
 
-        // Check if Right is already held (modifier active) - then Left was pressed second
-        if (_panNextState.IsPressed && (_panNextState.ModifierModeActive || Time.time - _panNextState.PressTime >= PAN_MODIFIER_THRESHOLD))
-        {
-            if (_buttonGUI.GetOverviewMode())
-            {
-                Debug.Log("RIGHT+LEFT: Prev Overview Layer");
-                _rtdUpdater.PrevOverviewLayer();
-            }
-            else
-            {
-                Debug.Log("RIGHT+LEFT: Step back in chunk");
-                _agentResponseHandler.StepBackInChunk();
-            }
-            PromoteModifier(_panNextState, "Pan Right");
-            _panNextState.Reset();
-            return;
-        }
-
-        // Neither held - both pressed simultaneously (reserved)
-        // _agentResponseHandler.ToggleChunkMode();
-        _panPrevState.Reset();
-        _panNextState.Reset();
+    /// <summary>
+    /// F1 then a pan within the push-to-talk delay skips like pan + F1. Cancels the
+    /// recording and uses up the pan press.
+    /// </summary>
+    private bool TrySkipAfterF1(PanModifierState pan, int dir)
+    {
+        if (_agentHoldState.Coroutine == null || _agentHoldState.IsHeld) return false;
+        StopCoroutine(_agentHoldState.Coroutine);
+        _agentHoldState.Reset();
+        pan.IsPressed = true;
+        pan.PressTime = Time.time;
+        pan.CombinationUsed = true;
+        AppLog.Info(LogArea.Buttons, dir > 0 ? "F1 + Pan Right: next chunk or layer" : "F1 + Pan Left: previous chunk or layer");
+        _textNav.Skip(dir);
+        return true;
     }
 
     private void HandleFunctionPress(int functionNumber)
     {
+        _rtdUpdater.CancelPendingPresentation();
         var config = _functionConfigs[functionNumber];
 
-        if (_panPrevState.IsPressed)
+        // A pan is down and this key has a pan action (F1: skip): run that instead.
+        // Keys without one (F2 stop, F3 repeat, F4 refresh) always do their own job.
+        if (_panPrevState.IsPressed && !_panPrevState.CombinationUsed && config.PanLeftAction != null)
         {
             PromoteModifier(_panPrevState, $"Pan Left (F{functionNumber})");
             if (!string.IsNullOrEmpty(config.PanLeftLog))
-                Debug.Log(config.PanLeftLog);
+                AppLog.Info(LogArea.Buttons, config.PanLeftLog);
             config.PanLeftAction?.Invoke();
             _panPrevState.Reset();
             return;
         }
 
-        if (_panNextState.IsPressed)
+        if (_panNextState.IsPressed && !_panNextState.CombinationUsed && config.PanRightAction != null)
         {
             PromoteModifier(_panNextState, $"Pan Right (F{functionNumber})");
             if (!string.IsNullOrEmpty(config.PanRightLog))
-                Debug.Log(config.PanRightLog);
+                AppLog.Info(LogArea.Buttons, config.PanRightLog);
             config.PanRightAction?.Invoke();
             _panNextState.Reset();
             return;
@@ -333,7 +348,7 @@ public class RTDButtonResponder : MonoBehaviour, InterfaceRTDButtonResponder
         else
         {
             if (!string.IsNullOrEmpty(config.StandaloneLog))
-                Debug.Log(config.StandaloneLog);
+                AppLog.Info(LogArea.Buttons, config.StandaloneLog);
             config.StandaloneAction?.Invoke();
         }
     }
@@ -343,11 +358,11 @@ public class RTDButtonResponder : MonoBehaviour, InterfaceRTDButtonResponder
         yield return new WaitForSeconds(AGENT_HOLD_TIME);
         _agentWakeWord.StopAudio();
         _agentHoldState.IsHeld = true;
-        Debug.Log("Starting speech recognition...");
+        AppLog.Info(LogArea.Buttons, "Starting speech recognition...");
         
         _audioToneManager.PlayStartTone();
         _speechToText.StartSpeechRecognition(
-            transcript => _agentResponseHandler.HandleButtonSpeech(transcript, false), true, "none", () => Debug.Log("STT complete")
+            transcript => _agentResponseHandler.HandleButtonSpeech(transcript, false), true, "none", () => AppLog.Detail(LogArea.Speech, "STT complete")
         );
     }
 
@@ -361,7 +376,7 @@ public class RTDButtonResponder : MonoBehaviour, InterfaceRTDButtonResponder
                 StopCoroutine(s.ModifierCoroutine);
                 s.ModifierCoroutine = null;
             }
-            Debug.Log($"{who}: modifier promoted");
+            AppLog.Detail(LogArea.Buttons, $"{who}: modifier promoted");
         }
         s.CombinationUsed = true;
     }
@@ -372,7 +387,7 @@ public class RTDButtonResponder : MonoBehaviour, InterfaceRTDButtonResponder
 
         if (_agentHoldState.IsHeld)
         {
-            Debug.Log("Transcribing STT...");
+            AppLog.Detail(LogArea.Speech, "Transcribing STT...");
             _audioToneManager.PlayEndTone();
             _agentWakeWord.ResumeWakeWord();
             _agentResponseHandler.BlinkCursor();

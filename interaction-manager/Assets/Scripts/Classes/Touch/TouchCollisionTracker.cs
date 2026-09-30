@@ -83,7 +83,7 @@ public class TouchCollisionTracker
         if (_collidingObjects.Count > 0)
             return false;
 
-        // All pins cleared — contact is fully ended
+        // All pins cleared: contact has ended
         _inContact = false;
         OnContactEnded?.Invoke();
 
@@ -103,17 +103,9 @@ public class TouchCollisionTracker
     }
 
     /// <summary>
-    /// Gets the accumulated touched coordinates.
+    /// A copy of the touched coordinates (the internal set is cleared on trigger exit).
     /// </summary>
-    public HashSet<Vector2Int> GetCoordinates() => _coords;
-
-    /// <summary>
-    /// Clears the accumulated coordinates.
-    /// </summary>
-    public void ClearCoordinates()
-    {
-        _coords.Clear();
-    }
+    public HashSet<Vector2Int> GetCoordinates() => new HashSet<Vector2Int>(_coords);
 
     /// <summary>
     /// Resets all collision tracking state.
@@ -124,7 +116,7 @@ public class TouchCollisionTracker
         _coords.Clear();
         _enterTimes.Clear();
         _collidingObjects.Clear();
-        // Note: Don't clear _originalColors as they may still be needed for color restoration
+        // Keep _originalColors: they're still needed to restore colours
     }
 
     /// <summary>

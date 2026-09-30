@@ -219,11 +219,11 @@ public static class RTDDrawing
     }
 
     /// <summary>
-    /// Draw X-axis tick marker at the given column (3 rows below X_AXIS_ROW, skipping ZERO_MARKER).
+    /// Draw X-axis tick marker at the given column: the axis pin plus a 1-pin stub below it (skipping ZERO_MARKER).
     /// </summary>
     public static void DrawXTickMarker(int[,] grid, int col)
     {
-        for (int r = X_AXIS_ROW; r < X_AXIS_ROW + 3; r++)
+        for (int r = X_AXIS_ROW; r < X_AXIS_ROW + 2; r++)
         {
             if (r < GRID_HEIGHT && grid[r, col] != ZERO_MARKER)
                 grid[r, col] = AXIS_MARKER;
@@ -251,7 +251,7 @@ public static class RTDDrawing
                 grid[r, Y_AXIS_COL] = AXIS_MARKER;
         }
 
-        // Draw zero-line if y=0 is in viewport
+        // Draw zero-line if y=0 is in the window
         if (drawXAxis && yMin <= 0 && yMax >= 0)
         {
             for (int c = Y_AXIS_COL + 1; c <= xPixelMax; c++)
@@ -282,7 +282,8 @@ public static class RTDDrawing
                 int row = yPixelMax - i * gap;
                 row = Math.Max(yPixelMin, Math.Min(yPixelMax, row));
 
-                for (int c = 2; c < 5; c++)
+                // 1-pin stub left of the axis, matching the X ticks' 1-pin stub below theirs.
+                for (int c = Y_AXIS_COL - 1; c <= Y_AXIS_COL; c++)
                 {
                     if (grid[row, c] != ZERO_MARKER)
                         grid[row, c] = AXIS_MARKER;
@@ -298,7 +299,7 @@ public static class RTDDrawing
         {
             int row = RTDLayout.MapValueToPixel(filteredTicks[0], yMin, yMax, yPixelMax, yPixelMin);
             row = Math.Max(yPixelMin, Math.Min(yPixelMax, row));
-            for (int c = 2; c < 5; c++)
+            for (int c = Y_AXIS_COL - 1; c <= Y_AXIS_COL; c++)
             {
                 if (grid[row, c] != ZERO_MARKER)
                     grid[row, c] = AXIS_MARKER;

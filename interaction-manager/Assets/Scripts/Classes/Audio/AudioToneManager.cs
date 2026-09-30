@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
+/// <summary>Start, end and waiting tones around speech input.</summary>
 public class AudioToneManager : MonoBehaviour, InterfaceAudioToneManager
 {
     [SerializeField] private AudioSource startTone;

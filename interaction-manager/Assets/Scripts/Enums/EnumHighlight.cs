@@ -15,6 +15,7 @@ public enum HighlightAnim
 {
     Static,    // raise once, hold until cleared or duration expires
     Animated,  // alternate raise/lower at TOUCH_PULSE_INTERVAL
+    Settle,    // pulse briefly, then hold like Static (stepping)
 }
 
 [System.Serializable]

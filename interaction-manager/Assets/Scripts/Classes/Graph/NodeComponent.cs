@@ -56,7 +56,8 @@ public class NodeComponent : MonoBehaviour
     {
         if (xy == null || xy.Length < 2)
         {
-            Debug.LogWarning($"PopulateBarCoordinates() skipped for {id}: xy is null or invalid.");
+            // Normal for nodes outside the display window: no pin position, nothing to
+            // expand. A long chart has many of these, so it's not a warning.
             return;
         }
 
@@ -125,7 +126,7 @@ public class NodeComponent : MonoBehaviour
             return;
         }
 
-        Debug.Log($"Spawning label for node {id}");
+        AppLog.Detail(LogArea.Render, $"Spawning label for node {id}");
 
         // 2) Parent it to this node
         var lbl = Instantiate(labelPrefab, transform);

@@ -219,7 +219,7 @@ public class RTDUpdater : MonoBehaviour, InterfaceRTDUpdater
         // Skip serial connection if RTD device is not connected
         if (!rtdDeviceConnected)
         {
-            UnityEngine.Debug.Log("RTD device not connected - skipping serial connection");
+            AppLog.Info(LogArea.Device, "RTD device not connected - skipping serial connection");
             return;
         }
 
@@ -259,7 +259,7 @@ public class RTDUpdater : MonoBehaviour, InterfaceRTDUpdater
                 var active = _mqttManager.GetActiveMQTTInstance();
                 if (!waitForMqttBeforeSerial || (active != null && active.isConnected))
                 {
-                    UnityEngine.Debug.Log("RTD device reconnected - attempting to establish serial connection");
+                    AppLog.Info(LogArea.Device, "RTD device reconnected - attempting to establish serial connection");
                     ArmSerialAndSync();
                 }
             }
@@ -269,7 +269,7 @@ public class RTDUpdater : MonoBehaviour, InterfaceRTDUpdater
         else if (_serialController.IsArmed)
         {
             // If RTD was disconnected at runtime, disarm the serial controller
-            UnityEngine.Debug.Log("RTD device disconnected - closing serial connection");
+            AppLog.Info(LogArea.Device, "RTD device disconnected - closing serial connection");
             DisarmSerial();
         }
 
@@ -343,7 +343,7 @@ public class RTDUpdater : MonoBehaviour, InterfaceRTDUpdater
         DisplayBrailleLabel(filledText);
     }
 
-    public void RefreshScreen()
+    public void RefreshScreen(bool brailleTitle = true)
     {
         if (_bufferManager.OriginalImage == null) return;
 
@@ -352,7 +352,8 @@ public class RTDUpdater : MonoBehaviour, InterfaceRTDUpdater
         Array.Clear(_bufferManager.Overlay, 0, _bufferManager.Overlay.Length);
         DisplayImage(_bufferManager.BaseImage);
         DisplayImageInUnityFromBase();
-        DisplayBrailleLabel(_bufferManager.BaseTitle);
+        if (brailleTitle)
+            DisplayBrailleLabel(_bufferManager.BaseTitle);
 
         _navigationController.ClearNavigation();
     }
@@ -522,7 +523,7 @@ public class RTDUpdater : MonoBehaviour, InterfaceRTDUpdater
                 if (points.Contains(coord))
                 {
                     hasGestureHighlight = true;
-                    UnityEngine.Debug.Log($"Gesture highlight already exists at ({x},{y}), skipping navigation highlight");
+                    AppLog.Detail(LogArea.Render, $"Gesture highlight already exists at ({x},{y}), skipping navigation highlight");
                     break;
                 }
             }
@@ -535,7 +536,7 @@ public class RTDUpdater : MonoBehaviour, InterfaceRTDUpdater
         }
         else
         {
-            UnityEngine.Debug.Log($"Skipped navigation highlight - gesture highlight present at ({x},{y})");
+            AppLog.Detail(LogArea.Render, $"Skipped navigation highlight - gesture highlight present at ({x},{y})");
         }
 
         // Display braille and TTS
@@ -631,48 +632,153 @@ public class RTDUpdater : MonoBehaviour, InterfaceRTDUpdater
     {
         SendCellFromView(coord.y, coord.x);
     }
-    public void NextBraillePage()
+    public void NextBraillePage() => TryNextBraillePage();
+
+    /// <summary>Show the next braille line; false when the text has no more lines.</summary>
+    public bool TryNextBraillePage()
     {
-        if (_bufferManager.NextBraillePage())
-        {
-            SendTextLineToDot(_bufferManager.CurrentBrailleHex);
-        }
+        if (!_bufferManager.NextBraillePage()) return false;
+        SendTextLineToDot(_bufferManager.CurrentBrailleHex);
+        return true;
     }
 
-    public void NextOverviewLayer()
+    /// <summary>Start the layered presentation from the first layer next time.</summary>
+    public void ResetOverviewLayer() => _bufferManager.SetOverviewLayer(-1);
+
+    /// <summary>When the navigation highlight was made (Unix ms), for ranking referents.</summary>
+    public long GetHighlightAnchoredAtMs() => _navigationController.HighlightAnchoredAtMs;
+
+    /// <summary>The node navigation is anchored on, by identity.</summary>
+    public NodeComponent GetHighlightedNode() => _navigationController.CurrentHighlightedNode;
+
+    private Coroutine _presentationStart;
+
+    /// <summary>
+    /// Start the presentation at its title layer once the current speech (e.g. the
+    /// load reply) has finished.
+    /// </summary>
+    public void StartOverviewPresentation()
     {
-        if (_buttonGUI.GetOverviewMode())
-        {
-            int maxLayers = graphLoader.GetOverviewLayerCount();
-            if (_bufferManager.CurrentOverviewLayer >= maxLayers - 1)
-            {
-                Debug.Log("Already at last overview layer.");
-                return;
-            }
-            _bufferManager.NextOverviewLayer(maxLayers);
-            ShowOverviewLayer(_bufferManager.CurrentOverviewLayer, maxLayers);
-        }
+        if (_presentationStart != null) StopCoroutine(_presentationStart);
+        _presentationStart = StartCoroutine(StartPresentationWhenQuiet());
     }
 
-    public void PrevOverviewLayer()
+    /// <summary>Begin the presentation now (the on-screen button).</summary>
+    public void StartOverviewPresentationNow()
     {
-        if (_buttonGUI.GetOverviewMode())
+        CancelPendingPresentation();
+        BeginPresentation();
+    }
+
+    /// <summary>
+    /// Cancel a presentation that hasn't started yet. Called on any input or reply;
+    /// the user can still ask for it by voice.
+    /// </summary>
+    public void CancelPendingPresentation()
+    {
+        if (_presentationStart != null)
         {
-            int maxLayers = graphLoader.GetOverviewLayerCount();
-            if (_bufferManager.CurrentOverviewLayer <= 0)
-            {
-                Debug.Log("Already at first overview layer.");
-                return;
-            }
-            _bufferManager.PrevOverviewLayer(maxLayers);
-            ShowOverviewLayer(_bufferManager.CurrentOverviewLayer, maxLayers);
+            StopCoroutine(_presentationStart);
+            _presentationStart = null;
+            AppLog.Detail(LogArea.Presentation, "Pending start cancelled");
         }
+        if (graphLoader != null) graphLoader.CancelPendingPresentation();
+    }
+
+    /// <summary>End any presentation on a chart load, without redrawing the old chart.</summary>
+    public void ClearOverviewModeForLoad()
+    {
+        CancelPendingPresentation();
+        _buttonGUI.ClearOverviewMode();
+        _bufferManager.SetOverviewLayer(-1);
+    }
+
+    public bool IsPresentationActive => _buttonGUI.GetOverviewMode();
+
+    /// <summary>
+    /// Leave the presentation and show the user's filter again. With announce, say so
+    /// and name any series that are hidden again.
+    /// </summary>
+    public void EndPresentation(bool announce)
+    {
+        bool wasOn = _buttonGUI.GetOverviewMode();
+        _buttonGUI.SetOverviewMode(false);   // restores the filter and redraws
+        if (!announce || !wasOn) return;
+        var hidden = graphLoader.FilteredSeries;
+        string text = "End of overview.";
+        if (hidden.Count > 0)
+            text += $" {JoinNames(hidden)} {(hidden.Count == 1 ? "is" : "are")} hidden again.";
+        DisplayBrailleLabel(text);
+        _textToSpeech.ConvertTextToSpeech(text, speechSettings, null);
+    }
+
+    private static string JoinNames(IReadOnlyList<string> names) =>
+        names.Count == 1 ? names[0] : string.Join(", ", names.Take(names.Count - 1)) + " and " + names[names.Count - 1];
+
+    /// <summary>A short system notice, spoken and brailled.</summary>
+    public void SpeakNotice(string text)
+    {
+        DisplayBrailleLabel(text);
+        _textToSpeech.ConvertTextToSpeech(text, speechSettings, null);
+    }
+
+    private IEnumerator StartPresentationWhenQuiet()
+    {
+        // Wait a frame: a reply applies its load before its speech starts.
+        yield return null;
+        float waited = 0f;
+        while (_textToSpeech.IsSpeaking() && waited < 15f)
+        {
+            waited += Time.deltaTime;
+            yield return null;
+        }
+        _presentationStart = null;
+        BeginPresentation();
+    }
+
+    private void BeginPresentation()
+    {
+        AppLog.Info(LogArea.Presentation, "Started");
+        _buttonGUI.SetOverviewMode(true);
+        _bufferManager.SetOverviewLayer(-1);
+        NextOverviewLayer();
+    }
+
+    /// <summary>Show the next layer; false at the last one (or with no presentation).</summary>
+    public bool NextOverviewLayer()
+    {
+        if (!_buttonGUI.GetOverviewMode()) return false;
+        int maxLayers = graphLoader.GetOverviewLayerCount();
+        if (_bufferManager.CurrentOverviewLayer >= maxLayers - 1)
+        {
+            AppLog.Detail(LogArea.Presentation, "Already at last overview layer.");
+            return false;
+        }
+        _bufferManager.NextOverviewLayer(maxLayers);
+        ShowOverviewLayer(_bufferManager.CurrentOverviewLayer, maxLayers);
+        return true;
+    }
+
+    /// <summary>Show the previous layer; false at the first one (or with no presentation).</summary>
+    public bool PrevOverviewLayer()
+    {
+        if (!_buttonGUI.GetOverviewMode()) return false;
+        int maxLayers = graphLoader.GetOverviewLayerCount();
+        if (_bufferManager.CurrentOverviewLayer <= 0)
+        {
+            AppLog.Detail(LogArea.Presentation, "Already at first overview layer.");
+            return false;
+        }
+        _bufferManager.PrevOverviewLayer(maxLayers);
+        ShowOverviewLayer(_bufferManager.CurrentOverviewLayer, maxLayers);
+        return true;
     }
 
     private void ShowOverviewLayer(int index, int maxLayers)
     {
+        AppLog.Info(LogArea.Presentation, $"Layer {index + 1}/{maxLayers}");
         var (description, found) = graphLoader.SetOverviewLayer(index);
-        DisplayBrailleLabel(description);
+        DisplayBrailleLabel(description, BrailleLineOwner.Presentation);
         if (!found) return;
 
         bool isMultiLayer = maxLayers > 1;
@@ -692,12 +798,14 @@ public class RTDUpdater : MonoBehaviour, InterfaceRTDUpdater
         }
     }
 
-    public void PrevBraillePage()
+    public void PrevBraillePage() => TryPrevBraillePage();
+
+    /// <summary>Show the previous braille line; false on the text's first line.</summary>
+    public bool TryPrevBraillePage()
     {
-        if (_bufferManager.PrevBraillePage())
-        {
-            SendTextLineToDot(_bufferManager.CurrentBrailleHex);
-        }
+        if (!_bufferManager.PrevBraillePage()) return false;
+        SendTextLineToDot(_bufferManager.CurrentBrailleHex);
+        return true;
     }
     private void CancelUnifiedTailOnly()
     {
@@ -712,6 +820,18 @@ public class RTDUpdater : MonoBehaviour, InterfaceRTDUpdater
     public void StopPulsePins()
     {
         _highlightManager.StopPulsePins();
+    }
+
+    /// <summary>Clear the agent's highlights and the thinking indicator. The user's
+    /// double-tap boxes and step highlight stay: they persist until refreshed.</summary>
+    public void StopAgentHighlights()
+    {
+        if (_pulseLoadingBarCoroutine != null)
+        {
+            StopCoroutine(_pulseLoadingBarCoroutine);
+            _pulseLoadingBarCoroutine = null;
+        }
+        _highlightManager.ClearHighlights("agent");
     }
 
     public void StopPulsePins(IEnumerable<Vector2Int> coords, float interval)
@@ -784,23 +904,6 @@ public class RTDUpdater : MonoBehaviour, InterfaceRTDUpdater
         _highlightManager.ClearHighlights(hand);
     }
 
-    // ===== Gesture Highlight Persistence =====
-
-    public void StoreAllGestureHighlights(Func<Vector2Int, (object xValue, object yValue)?> getNodeValues)
-    {
-        _highlightManager.StoreAllGestureHighlights(getNodeValues);
-    }
-
-    public void RestoreAllGestureHighlights()
-    {
-        _highlightManager.RestoreAllGestureHighlights();
-    }
-
-    public void ClearStoredGestureValues()
-    {
-        _highlightManager.ClearStoredGestureValues();
-    }
-
     public void PulseShape(int x, int y, HighlightShape shape, float interval = 1f, float duration = -1f, string hand = "agent", bool clearPrevious = true)
     {
         _highlightManager.PulseShape(x, y, shape, interval, duration, hand, clearPrevious);
@@ -838,8 +941,21 @@ public class RTDUpdater : MonoBehaviour, InterfaceRTDUpdater
         _bufferManager.SetTitle(title);
     }
 
-    public void DisplayBrailleLabel(string text)
+    private BrailleLineOwner _lineOwner = BrailleLineOwner.None;
+    private BrailleLineOwner _lastTextSequence = BrailleLineOwner.None;
+
+    /// <summary>What the braille line is showing.</summary>
+    public BrailleLineOwner LineOwner => _lineOwner;
+
+    /// <summary>The last answer or presentation text shown (pan + F1 steps through it).</summary>
+    public BrailleLineOwner LastTextSequence => _lastTextSequence;
+
+    public void DisplayBrailleLabel(string text) => DisplayBrailleLabel(text, BrailleLineOwner.None);
+
+    public void DisplayBrailleLabel(string text, BrailleLineOwner owner)
     {
+        _lineOwner = owner;
+        if (owner != BrailleLineOwner.None) _lastTextSequence = owner;
         _bufferManager.SetBrailleText(text);
 
         if (_bufferManager.TotalBraillePages == 0)
@@ -854,7 +970,7 @@ public class RTDUpdater : MonoBehaviour, InterfaceRTDUpdater
                 System.Linq.Enumerable.Range(0, _bufferManager.CurrentBrailleHex.Length / 2)
                     .Select(i => (char)(0x2800 + Convert.ToByte(_bufferManager.CurrentBrailleHex.Substring(i * 2, 2), 16)))
                     .ToArray()).TrimEnd('⠀');
-            UnityEngine.Debug.Log($"[Braille] {text}\n  Unicode: {unicode}");
+            AppLog.Detail(LogArea.Braille, $"{text}\n  Unicode: {unicode}");
         }
 
         // Send first page
@@ -931,7 +1047,7 @@ public class RTDUpdater : MonoBehaviour, InterfaceRTDUpdater
         if (!enableTail || _streamingController.IsStreaming)
             return;
         CancelTail();                            // only one tail at a time
-        UnityEngine.Debug.Log("[Tail] start");
+        AppLog.Detail(LogArea.Render, "start");
         _tailCoroutine = StartCoroutine(UnifiedTailCoroutine(includeBraille));
     }
 
@@ -1016,7 +1132,7 @@ public class RTDUpdater : MonoBehaviour, InterfaceRTDUpdater
 
         _inTail = false;
         _tailCoroutine = null;
-        UnityEngine.Debug.Log("[Tail] stop");
+        AppLog.Detail(LogArea.Render, "stop");
     }
 
     private byte PackCellFromView(int blockRow, int blockCol)
@@ -1053,7 +1169,7 @@ public class RTDUpdater : MonoBehaviour, InterfaceRTDUpdater
     /// <summary>
     /// Refreshes the Unity pins for every pixel in each line, then queues a single
     /// full-line graphic command per line.  Replaces up to 30 individual cell commands
-    /// with one ACK-gated line command — roughly 10× fewer round-trips for thick bars.
+    /// with one ACK-gated line command: roughly 10× fewer round-trips for thick bars.
     /// </summary>
     private void SendLinesFromView(HashSet<int> lines)
     {

@@ -29,6 +29,37 @@ public static class RTDGridConstants
     public static readonly (int dx, int dy)[][] SERIES_SYMBOLS = { SYMBOL_TRIANGLE_UP, SYMBOL_TRIANGLE_DOWN, SYMBOL_DIAMOND, SYMBOL_X_CROSS, SYMBOL_DOT, SYMBOL_FOCUS };
     public static readonly string[] SERIES_SYMBOL_NAMES = { "triangle_up", "triangle_down", "diamond", "x_cross", "dot", "focus" };
 
+    /// <summary>
+    /// Map a Vega-Lite shape name onto a tactile symbol. Vega-Lite's "cross" is an upright
+    /// plus, so it is the plus pattern (Diamond); its "diamond" stands for the X pattern (XCross).
+    /// </summary>
+    public static bool TryParseVegaShape(string shape, out SymbolType symbol)
+    {
+        switch ((shape ?? "").Trim().ToLowerInvariant())
+        {
+            case "cross":         symbol = SymbolType.Diamond;      return true;
+            case "diamond":       symbol = SymbolType.XCross;       return true;
+            case "triangle-up":   symbol = SymbolType.TriangleUp;   return true;
+            case "triangle-down": symbol = SymbolType.TriangleDown; return true;
+            case "circle":        symbol = SymbolType.Dot;          return true;
+            default:              symbol = SymbolType.Default;      return false;
+        }
+    }
+
+    /// <summary>The spoken name for each symbol.</summary>
+    public static string SpokenSymbolName(SymbolType symbol)
+    {
+        switch (symbol)
+        {
+            case SymbolType.Diamond:      return "plus";
+            case SymbolType.XCross:       return "cross";
+            case SymbolType.TriangleUp:   return "arrow up";
+            case SymbolType.TriangleDown: return "arrow down";
+            case SymbolType.Dot:          return "single dot";
+            default:                      return null;
+        }
+    }
+
     // Line patterns for multi-series differentiation (true = draw, false = skip)
     public static readonly bool[] LINE_PATTERN_SOLID = { true };                                    // series 0: ————
     public static readonly bool[] LINE_PATTERN_DASHED = { true, true, false };                      // series 1: — — —
@@ -41,7 +72,8 @@ public static class RTDGridConstants
 
     // Grid positioning
     public const int X_AXIS_ROW = 36;  // X-axis row position
-    public const int Y_AXIS_COL = 4;
+    // Left edge: blank margin (cols 0-1), 1-pin tick stub (col 2), axis line (col 3).
+    public const int Y_AXIS_COL = 3;
 
     // Chart area bounds
     public const int CHART_MAX_COL = 58;

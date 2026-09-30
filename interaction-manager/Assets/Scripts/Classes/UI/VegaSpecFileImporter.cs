@@ -18,7 +18,7 @@ public class VegaSpecFileImporter : MonoBehaviour
     /// <summary>
     /// Opens file picker to select a Vega-Lite JSON spec.
     /// Copies it to StreamingAssets and optionally loads it.
-    /// NOTE: This only works in Unity Editor, not in builds.
+    /// Only works in the Unity Editor, not in builds.
     /// </summary>
     public void ImportVegaSpec()
     {
@@ -40,11 +40,11 @@ public class VegaSpecFileImporter : MonoBehaviour
 
         if (string.IsNullOrEmpty(path))
         {
-            Debug.Log("File selection cancelled");
+            AppLog.Info(LogArea.Setup, "File selection cancelled");
             return;
         }
 
-        Debug.Log($"Selected file: {path}");
+        AppLog.Info(LogArea.Setup, $"Selected file: {path}");
 
         try
         {
@@ -82,7 +82,7 @@ public class VegaSpecFileImporter : MonoBehaviour
                     fileName = PromptForFileName(spec);
                     if (string.IsNullOrEmpty(fileName))
                     {
-                        Debug.Log("Import cancelled");
+                        AppLog.Info(LogArea.Setup, "Import cancelled");
                         return;
                     }
                 }
@@ -102,13 +102,13 @@ public class VegaSpecFileImporter : MonoBehaviour
 
                 if (!overwrite)
                 {
-                    Debug.Log("Import cancelled");
+                    AppLog.Info(LogArea.Setup, "Import cancelled");
                     return;
                 }
             }
 
             File.Copy(path, destPath, overwrite: true);
-            Debug.Log($"Imported to: {destPath}");
+            AppLog.Info(LogArea.Setup, $"Imported to: {destPath}");
 
             // Refresh Unity's AssetDatabase
             AssetDatabase.Refresh();
@@ -136,7 +136,7 @@ public class VegaSpecFileImporter : MonoBehaviour
             if (loadNow && chartLoader != null)
             {
                 // Chart discovery already done above, just need to load it
-                Debug.Log($"Loading newly imported chart...");
+                AppLog.Info(LogArea.Setup, $"Loading newly imported chart...");
             }
         }
         catch (Exception ex)

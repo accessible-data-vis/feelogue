@@ -4,11 +4,8 @@
 # https://github.com/GoogleCloudPlatform/python-docs-samples/blob/main/texttospeech/snippets/synthesize_text.py
 
 from google.cloud import texttospeech
-import pyaudio
 import os
 import os.path
-import wave
-from pygame import mixer
 import sys
 import argparse
 
@@ -17,8 +14,6 @@ dir_path = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.join(dir_path, "..", "..", "..")
 creds = os.path.join(project_root, "key-service-account-google.json")
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = creds
-
-mixer.init(buffer=1024)
 
 
 def main():
@@ -35,6 +30,9 @@ def main():
     )
     parser.add_argument(
         "--pitch", type=float, default=0.0, help="Pitch adjustment (-20.0 to 20.0)"
+    )
+    parser.add_argument(
+        "--out", default="", help="Output WAV path (default: <project>/Temp/output.wav)"
     )
     args = parser.parse_args()
 
@@ -79,7 +77,8 @@ def main():
         input=synthesis_input, voice=voice, audio_config=audio_config
     )
 
-    output_file = os.path.join(project_root, "Temp", "output.wav")
+    output_file = args.out or os.path.join(project_root, "Temp", "output.wav")
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
     with open(output_file, "wb") as out:
         out.write(response.audio_content)
 

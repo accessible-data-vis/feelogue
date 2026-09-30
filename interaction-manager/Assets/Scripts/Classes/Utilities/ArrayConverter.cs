@@ -2,6 +2,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
 
+/// <summary>Reads JSON number arrays as int[] (Json.NET reads them as Int64).</summary>
 public class IntArrayConverter : JsonConverter<int[]>
 {
     public override int[] ReadJson(JsonReader reader, Type objectType, int[] existingValue, bool hasExistingValue, JsonSerializer serializer)
@@ -23,6 +24,7 @@ public class IntArrayConverter : JsonConverter<int[]>
     }
 }
 
+/// <summary>Reads nested JSON number arrays as int[,].</summary>
 public class IntArray2DConverter : JsonConverter<int[][]>
 {
     public override int[][] ReadJson(JsonReader reader, Type objectType, int[][] existingValue, bool hasExistingValue, JsonSerializer serializer)

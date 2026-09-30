@@ -1,6 +1,7 @@
 using System;
 using System.Security;
 
+/// <summary>SSML helpers for the speech script.</summary>
 public static class SpeechSynthesisMarkup
 {
     public static string Wrap(string text)

@@ -48,7 +48,7 @@ public class TouchSpatialProcessor
         if (coords == null || coords.Count == 0)
             return false;
 
-        // CALIBRATION MODE: Just compute centroid, no node matching needed
+        // Calibration mode: just compute the centroid, no node matching
         if (calibrationMode)
         {
             interpretedPoint = new Vector2Int(
@@ -57,11 +57,11 @@ public class TouchSpatialProcessor
             );
 
             OnTouchProcessed?.Invoke(interpretedPoint, coords, null);
-            UnityEngine.Debug.Log($"[CALIBRATION] Touch at centroid {interpretedPoint}, raw coords: {string.Join(", ", coords)}");
+            AppLog.Detail(LogArea.Touch, $"[CALIBRATION] Touch at centroid {interpretedPoint}, raw coords: {string.Join(", ", coords)}");
             return true;
         }
 
-        // Filter to only pins with data AFTER collecting full spatial footprint
+        // Filter to pins with data after collecting the full spatial footprint
         matchingNodes = _visualizer.GetMatchingNodes(coords);
         if (matchingNodes == null || matchingNodes.Count == 0)
         {
@@ -69,7 +69,7 @@ public class TouchSpatialProcessor
             return false;
         }
 
-        // Pass FULL coords (including lowered pins) for accurate spatial calculation
+        // Pass the full coords (including lowered pins) for accurate spatial calculation
         _touchProcessor.ProcessTouch(coords, matchingNodes);
 
         interpretedPoint = _touchProcessor.interpretedTapPoint;
@@ -81,7 +81,7 @@ public class TouchSpatialProcessor
         CheckForMisalignment(coords, interpretedPoint, fingerName);
 
         // Log distribution data
-        UnityEngine.Debug.Log("Distribution Calculation: " +
+        AppLog.Detail(LogArea.Touch, "Distribution Calculation: " +
                   $"Most Likely Pin: {_touchProcessor.mostLikelyPin} (p={_touchProcessor.mostLikelyProbability:F4}), " +
                   $"closestPoint: {_touchProcessor.closestPoint}, " +
                   $"Pins: {string.Join(", ", _touchProcessor.nodePositions.Select(p => $"({p.x},{p.y})"))}"

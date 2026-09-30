@@ -7,9 +7,12 @@ from pathlib import Path
 
 
 def _load_dotenv():
-    """Load .env file. Required for the agent to run."""
+    """Load .env into the environment. Without one, the settings must already be
+    in the environment (the tests set a placeholder key)."""
     env_path = Path(__file__).parent.parent / ".env"
     if not env_path.exists():
+        if os.environ.get("OPENAI_API_KEY"):
+            return
         raise FileNotFoundError(
             f"Missing .env file at {env_path}\n"
             "Copy .env.example to .env and fill in your values."
@@ -45,9 +48,11 @@ OPENAI_MODEL_IMAGE = os.environ.get("OPENAI_MODEL_IMAGE", OPENAI_MODEL)
 # =============================================================================
 # MQTT
 # =============================================================================
-MQTT_HOST = _require("MQTT_REMOTE_HOST")
+# Remote-broker settings are only needed with `--remote`; mqtt_handler.run checks
+# them then, so a local run (localhost:1883, no TLS, no auth) works without them.
+MQTT_HOST = os.environ.get("MQTT_REMOTE_HOST")
 MQTT_PORT = int(os.environ.get("MQTT_REMOTE_PORT", "8883"))
-MQTT_USERNAME = _require("MQTT_REMOTE_USERNAME")
-MQTT_PASSWORD = _require("MQTT_REMOTE_PASSWORD")
+MQTT_USERNAME = os.environ.get("MQTT_REMOTE_USERNAME")
+MQTT_PASSWORD = os.environ.get("MQTT_REMOTE_PASSWORD")
 MQTT_TOPIC_IN = os.environ.get("MQTT_TOPIC_IN", "agent_in")
 MQTT_TOPIC_OUT = os.environ.get("MQTT_TOPIC_OUT", "agent_out")
