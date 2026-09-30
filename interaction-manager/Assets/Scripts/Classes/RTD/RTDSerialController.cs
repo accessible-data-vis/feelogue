@@ -167,7 +167,7 @@ public class RTDSerialController
             if (!_serialPort.IsOpen)
             {
                 _serialPort.Open();
-                Debug.Log("Serial port opened.");
+                AppLog.Info(LogArea.Device, "Serial port opened.");
             }
         }
         catch (Exception e)

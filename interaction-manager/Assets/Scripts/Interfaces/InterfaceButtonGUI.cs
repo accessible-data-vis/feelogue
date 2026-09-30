@@ -6,6 +6,7 @@ using UnityEngine;
 public interface InterfaceButtonGUI
 {
     public void SelectGraphOption(int option);
+    /// <summary>Load the chart named in the agent's "dataName-chartType" command.</summary>
     public void HandleChartCommand(string rtdCommand);
     public bool GetDoubleTapState();
     public bool GetTouchSenseState();
@@ -20,9 +21,12 @@ public interface InterfaceButtonGUI
     public float GetBlinkDuration();
     public ProcessingMode GetProcessingMode();
     public bool GetWaitToneMode();
+    /// <summary>Whether highlights lower the pins around them.</summary>
     public bool GetLocalIsolationMode();
     public bool GetFollowUpMode();
     public bool GetOverviewMode();
+    public void SetOverviewMode(bool on);
+    public void ClearOverviewMode();
     public bool GetToggleMode();
     public void UpdateHighlightModes(string chartType);
 }

@@ -59,7 +59,7 @@ public class RTDCalibrationDiagnostic : MonoBehaviour
 
     private const float PIN_SPACING = 0.0025f; // 2.5mm
     private const float HAND_PROXIMITY_THRESHOLD = 0.02f; // 20mm
-    private const int CALIBRATION_TOUCH_RADIUS = 5; // pins — ignore touches >5 pins from target
+    private const int CALIBRATION_TOUCH_RADIUS = 5; // pins: ignore touches more than 5 pins from the target
     private const float GIZMO_SPHERE_SIZE = 0.002f;
     private const float GIZMO_PIN_SIZE = 0.003f;
     private List<AlignmentSample> _samples = new List<AlignmentSample>();
@@ -129,13 +129,13 @@ public class RTDCalibrationDiagnostic : MonoBehaviour
 
                 if (_currentCalibrationPinIndex < calibrationPins.Count)
                 {
-                    Debug.Log($"Pin {_currentCalibrationPinIndex}/{calibrationPins.Count} complete. " +
+                    AppLog.Info(LogArea.Device, $"Pin {_currentCalibrationPinIndex}/{calibrationPins.Count} complete. " +
                               $"Move to next pin: {calibrationPins[_currentCalibrationPinIndex]}");
                     PulseCurrentTargetPin();
                 }
                 else
                 {
-                    Debug.Log(" ALL PINS COMPLETE! Click 'Apply Suggested Correction'");
+                    AppLog.Info(LogArea.Device, "ALL PINS COMPLETE! Click 'Apply Suggested Correction'");
                     _rtdUpdater?.StopPulsePins();
                 }
             }
@@ -151,11 +151,11 @@ public class RTDCalibrationDiagnostic : MonoBehaviour
         if (aligner != null)
         {
             aligner.applyOffsetRealtime = true;
-            Debug.Log(" Enabled real-time offset updates on RTDAligner");
+            AppLog.Info(LogArea.Device, "Enabled real-time offset updates on RTDAligner");
         }
 
         string methodName = useGaussianMethod ? "Gaussian probability" : "raw finger position";
-        Debug.Log($"CALIBRATION MODE STARTED ({methodName})\n" +
+        AppLog.Info(LogArea.Device, $"CALIBRATION MODE STARTED ({methodName})\n" +
                   "Touch each pulsing pin in sequence:\n" +
                   "1. NW corner (0,0)\n" +
                   "2. NE corner (59,0)\n" +
@@ -194,7 +194,7 @@ public class RTDCalibrationDiagnostic : MonoBehaviour
 
     private void ExitCalibrationMode()
     {
-        Debug.Log(" CALIBRATION MODE ENDED");
+        AppLog.Info(LogArea.Device, "CALIBRATION MODE ENDED");
 
         //  Disable bypass - restore normal validation
         if (leftPositionReport != null)
@@ -225,12 +225,12 @@ public class RTDCalibrationDiagnostic : MonoBehaviour
 
         Vector2Int targetPin = calibrationPins[_currentCalibrationPinIndex];
 
-        // Only accept touches near the target pin — ignore accidental touches elsewhere
+        // Only accept touches near the target pin
         int dx = Mathf.Abs(interpretedPoint.x - targetPin.x);
         int dy = Mathf.Abs(interpretedPoint.y - targetPin.y);
         if (dx > CALIBRATION_TOUCH_RADIUS || dy > CALIBRATION_TOUCH_RADIUS)
         {
-            Debug.Log($"Touch at {interpretedPoint} ignored — too far from target {targetPin} (dx={dx}, dy={dy})");
+            AppLog.Detail(LogArea.Device, $"Touch at {interpretedPoint} ignored, too far from target {targetPin} (dx={dx}, dy={dy})");
             return;
         }
 
@@ -257,7 +257,7 @@ public class RTDCalibrationDiagnostic : MonoBehaviour
 
         if (logErrors)
         {
-            Debug.Log($"Sample {samplesCollected}: Interpreted={interpretedPoint}, Target={targetPin}, " +
+            AppLog.Detail(LogArea.Device, $"Sample {samplesCollected}: Interpreted={interpretedPoint}, Target={targetPin}, " +
                       $"Error={error.magnitude * 1000f:F2}mm ({error.magnitude * 1000f / 2.5f:F1} pins), " +
                       $"RawPins={rawCoords.Count}");
         }
@@ -281,7 +281,7 @@ public class RTDCalibrationDiagnostic : MonoBehaviour
             hand: "calibration"
         );
 
-        Debug.Log($"Touch pin {_currentCalibrationPinIndex + 1}/{calibrationPins.Count}: {targetPin}");
+        AppLog.Info(LogArea.Device, $"Touch pin {_currentCalibrationPinIndex + 1}/{calibrationPins.Count}: {targetPin}");
     }
 
     private void UpdateAlignmentStatistics()
@@ -330,7 +330,7 @@ public class RTDCalibrationDiagnostic : MonoBehaviour
             return;
         }
 
-        Debug.Log($"Applying correction: {suggestedOffsetCorrection}\n" +
+        AppLog.Info(LogArea.Device, $"Applying correction: {suggestedOffsetCorrection}\n" +
                   $"   Old offset: {aligner.anchorLocalOffset}\n" +
                   $"   New offset: {aligner.anchorLocalOffset + suggestedOffsetCorrection}\n" +
                   $"   (RTDAnchor will move immediately if 'Apply Offset Realtime' is enabled)");

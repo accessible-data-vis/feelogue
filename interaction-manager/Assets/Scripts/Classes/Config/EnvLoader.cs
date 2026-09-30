@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 
+/// <summary>Reads settings from the project's .env file.</summary>
 public static class EnvLoader
 {
     private static Dictionary<string, string> _values;

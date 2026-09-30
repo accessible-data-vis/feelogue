@@ -57,20 +57,21 @@ public class TouchResponseOrchestrator
         string serializedTouchData,
         string fingerName)
     {
-        UnityEngine.Debug.Log($"DOUBLE TAP detected on {fingerName}!");
+        AppLog.Info(LogArea.Touch, $"DOUBLE TAP detected on {fingerName}!");
 
         if (highConfidencePositions.Count == 0)
         {
-            UnityEngine.Debug.LogWarning($"[DoubleTap] No high-confidence positions (threshold 0.2) — touch context NOT stored for agent.");
+            UnityEngine.Debug.LogWarning($"[DoubleTap] No high-confidence positions (threshold 0.2), touch context not stored for the agent.");
             return;
         }
 
+        _rtdUpdater.CancelPendingPresentation();   // a double tap counts as input
         Vector2Int coord = Vector2Int.RoundToInt(mostLikelyPin);
 
         // Check if we're already speaking for this same point
         if (_textToSpeech.IsSpeaking() && _currentSpeakingPoint.HasValue && _currentSpeakingPoint.Value == coord)
         {
-            UnityEngine.Debug.Log($"Ignoring duplicate double-tap on {coord} - already speaking for this point");
+            AppLog.Detail(LogArea.Touch, $"Ignoring duplicate double-tap on {coord} - already speaking for this point");
             return;
         }
 
@@ -84,15 +85,30 @@ public class TouchResponseOrchestrator
         // Navigation update
         _rtdUpdater.SetNavigationIndexOnly(coord);
 
-        // Audio and braille feedback
-        string label = _rtdUpdater.FormatValuesForTTS(matchingNodes, probabilities);
-        _rtdUpdater.DisplayBrailleLabel(label);
-
-        // Track which point we're speaking for and clear it when done
-        _currentSpeakingPoint = coord;
-        _textToSpeech.ConvertTextToSpeech(label, _speechSettings, () => {
-            _currentSpeakingPoint = null;
-        });
+        // Speech and braille each follow their GUI toggle.
+        bool speak = _buttonGUI.GetValueAudioState();
+        bool braille = _buttonGUI.GetValueBrailleState();
+        if (speak || braille)
+        {
+            string label = _rtdUpdater.FormatValuesForTTS(matchingNodes, probabilities);
+            if (string.IsNullOrWhiteSpace(label))
+            {
+                // TTS doesn't call back for empty text, so return before setting
+                // _currentSpeakingPoint.
+                UnityEngine.Debug.LogWarning($"[DoubleTap] Empty label for {coord}, nothing spoken or brailled.");
+                return;
+            }
+            if (braille)
+                _rtdUpdater.DisplayBrailleLabel(label);
+            if (speak)
+            {
+                // Track which point we're speaking for and clear it when done
+                _currentSpeakingPoint = coord;
+                _textToSpeech.ConvertTextToSpeech(label, _speechSettings, () => {
+                    _currentSpeakingPoint = null;
+                });
+            }
+        }
     }
 
     /// <summary>

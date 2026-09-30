@@ -7,9 +7,8 @@ using System;
 using System.Linq;
 
 /// <summary>
-/// Loads and manages Vega-Lite charts using the C# renderer (VegaToRTDRenderer).
-/// Handles chart discovery, loading, and viewport management.
-/// Loads Vega-Lite chart specifications, renders them to RTD grid format, and manages display.
+/// Loads Vega-Lite charts, renders them to the RTD grid with VegaToRTDRenderer, and
+/// runs the display window and the layered presentation.
 /// </summary>
 public class VegaChartLoader : MonoBehaviour
 {
@@ -43,13 +42,20 @@ public class VegaChartLoader : MonoBehaviour
     [SerializeField] private RTDGridConstants.SymbolType seriesSymbol3 = RTDGridConstants.SymbolType.Default;
 
     [Header("Highlight Config")]
-    [SerializeField] private HighlightConfig gestureConfig = new HighlightConfig { Shape = HighlightMarkShape.Mark, Anim = HighlightAnim.Animated, Duration = -1f };
-    [SerializeField] private HighlightConfig agentConfig   = new HighlightConfig { Shape = HighlightMarkShape.Box,  Anim = HighlightAnim.Static,   Duration = -1f };
-    [SerializeField] private HighlightConfig navConfig     = new HighlightConfig { Shape = HighlightMarkShape.Mark, Anim = HighlightAnim.Animated, Duration = -1f };
+    // Feedback grammar: gesture selection static, agent reference animated, stepping
+    // settles to static; all persist until cleared.
+    [SerializeField] private HighlightConfig gestureConfig = new HighlightConfig { Shape = HighlightMarkShape.Box, Anim = HighlightAnim.Static,   Duration = -1f };
+    [SerializeField] private HighlightConfig agentConfig   = new HighlightConfig { Shape = HighlightMarkShape.Box, Anim = HighlightAnim.Animated, Duration = -1f };
+    [SerializeField] private HighlightConfig navConfig     = new HighlightConfig { Shape = HighlightMarkShape.Box, Anim = HighlightAnim.Settle,   Duration = -1f };
 
-    [Header("Series Filtering")]
-    [SerializeField] private List<string> hiddenSeries = new List<string>();
+    // Series hidden on the display: the agent's filter, or the presentation's
+    // isolation while it runs.
+    private readonly List<string> hiddenSeries = new List<string>();
+    private readonly List<string> _agentHiddenSeries = new List<string>();
     [HideInInspector] public List<string> availableSeries = new List<string>();
+
+    /// <summary>The user's filter, as the agent last sent it.</summary>
+    public IReadOnlyList<string> FilteredSeries => _agentHiddenSeries;
     private string _hiddenSeriesPublishedKey = "";
 
     [Header("Range Filter")]
@@ -58,16 +64,12 @@ public class VegaChartLoader : MonoBehaviour
     [Tooltip("Hide data points after this index (-1 = disabled)")]
     [SerializeField] private int rangeFilterEnd = -1;
 
+    [Header("Layered Presentation")]
+    [Tooltip("Start the layered presentation (title layer) when a chart loads.")]
+    [SerializeField] private bool autoStartPresentation = true;
+
     [Header("Thick Bar Limits")]
     [SerializeField] private int maxBarsDisplayed = 10;
-
-    // Manual layer selection override
-    [Header("Manual Layer Selection")]
-    public bool useManualLayerSelection = false;
-    public string manualLayerName = "";
-
-    // Available layer names from current chart (populated at runtime)
-    [HideInInspector] public List<string> availableLayerNames = new List<string>();
 
     // ===== Auto-Discovery =====
     private ChartDiscoveryService _chartDiscovery;
@@ -83,13 +85,12 @@ public class VegaChartLoader : MonoBehaviour
     // ===== Current Chart Reference =====
     private DiscoveredChart _currentChart;
     private VegaSpec _currentVegaSpec;
-    private string _rawVegaJson; // Raw JSON for clean re-deserialization before layer transforms
     private bool _pendingInspectorRefresh = false;
 
     // X-axis windowing (index-based)
     private int _windowStart = 0;
     private int _windowSize = 0;  // Current X-window size
-    private int _maxViewportPoints = 0;  // Max points for current chart type (25 for line/bar, unlimited for scatter)
+    private int _maxWindowPoints = 0;  // Max points for current chart type (25 for line/bar, unlimited for scatter)
 
     // Y-axis windowing (value-based)
     private float _windowYMin = 0f;      // Current Y-window minimum
@@ -157,7 +158,7 @@ public class VegaChartLoader : MonoBehaviour
 
     private void OnMQTTConnected()
     {
-        UnityEngine.Debug.Log(" MQTT connected - publishing chart metadata index...");
+        AppLog.Detail(LogArea.Agent, "MQTT connected - publishing chart metadata index...");
         ChartMQTTPublisher.PublishChartMetadataIndex(_mqttManager, _availableCharts);
     }
 
@@ -177,7 +178,7 @@ public class VegaChartLoader : MonoBehaviour
             if (chart.dataset.Equals(dataset, StringComparison.OrdinalIgnoreCase) &&
                 chart.field.Equals(field, StringComparison.OrdinalIgnoreCase))
             {
-                UnityEngine.Debug.Log($"Found chart: ID={chart.id}, dataset='{chart.dataset}', field='{chart.field}'");
+                AppLog.Detail(LogArea.Chart, $"Found chart: ID={chart.id}, dataset='{chart.dataset}', field='{chart.field}'");
                 return chart.id;
             }
         }
@@ -202,7 +203,7 @@ public class VegaChartLoader : MonoBehaviour
             if (chart.dataName.Equals(dataName, StringComparison.OrdinalIgnoreCase) &&
                 chart.chartType.Equals(chartType, StringComparison.OrdinalIgnoreCase))
             {
-                UnityEngine.Debug.Log($"Found chart: ID={chart.id}, dataName='{chart.dataName}', chartType='{chart.chartType}'");
+                AppLog.Detail(LogArea.Chart, $"Found chart: ID={chart.id}, dataName='{chart.dataName}', chartType='{chart.chartType}'");
                 return chart.id;
             }
         }
@@ -276,9 +277,9 @@ public class VegaChartLoader : MonoBehaviour
     /// </summary>
     public void RediscoverCharts()
     {
-        UnityEngine.Debug.Log(" Rediscovering charts...");
+        AppLog.Detail(LogArea.Chart, "Rediscovering charts...");
         _availableCharts = _chartDiscovery.DiscoverCharts();
-        UnityEngine.Debug.Log($"Rediscovered {_availableCharts.Count} charts");
+        AppLog.Info(LogArea.Chart, $"Rediscovered {_availableCharts.Count} charts");
     }
 
     /// <summary>
@@ -292,15 +293,16 @@ public class VegaChartLoader : MonoBehaviour
 
     /// <summary>
     /// Generate RTD grid from Vega-Lite JSON and display on device.
-    /// Uses current viewport state (window start/size and Y-min/max).
+    /// Uses current window state (window start/size and Y-min/max).
     /// </summary>
-    private void GenerateAndDisplayRTDGrid(DiscoveredChart chart)
+    /// <param name="brailleTitle">Show the chart title on the braille line (only on a chart load).</param>
+    private void GenerateAndDisplayRTDGrid(DiscoveredChart chart, bool brailleTitle = false)
     {
         try
         {
             // Debug: Track how many times this is called
-            UnityEngine.Debug.Log($"GenerateAndDisplayRTDGrid called");
-            UnityEngine.Debug.Log($"Viewport: X=[{_windowStart}, {_windowStart + _windowSize - 1}], Y=[{_windowYMin:F2}, {_windowYMax:F2}]");
+            AppLog.Detail(LogArea.Render, $"GenerateAndDisplayRTDGrid called");
+            AppLog.Detail(LogArea.Render, $"Window: X=[{_windowStart}, {_windowStart + _windowSize - 1}], Y=[{_windowYMin:F2}, {_windowYMax:F2}]");
             if (_currentVegaSpec == null)
             {
                 UnityEngine.Debug.LogError(" No Vega spec loaded!");
@@ -311,7 +313,7 @@ public class VegaChartLoader : MonoBehaviour
             string xField = _currentVegaSpec.Encoding.X.Field;
             string yField = _currentVegaSpec.Encoding.Y.Field;
 
-            // Get windowed data based on current viewport
+            // Get windowed data based on the current window
             var fullData = _currentVegaSpec.Data.Values;
             string colorFieldForWindowing = _currentVegaSpec.Encoding?.GetColorField();
             List<Dictionary<string, object>> windowedDataBeforeYFilter;
@@ -350,9 +352,9 @@ public class VegaChartLoader : MonoBehaviour
                 return false;
             }).ToList();
 
-            UnityEngine.Debug.Log($"Viewport: X=[{_windowStart}, {_windowStart + _windowSize - 1}], Y=[{_windowYMin:F2}, {_windowYMax:F2}] → {windowedData.Count} visible points (after Y-filter)");
+            AppLog.Detail(LogArea.Render, $"Window: X=[{_windowStart}, {_windowStart + _windowSize - 1}], Y=[{_windowYMin:F2}, {_windowYMax:F2}] → {windowedData.Count} visible points (after Y-filter)");
 
-            // Generate RTD grid using C# renderer with viewport parameters
+            // Generate RTD grid using C# renderer with window parameters
             var hiddenSet = hiddenSeries.Count > 0 ? new HashSet<string>(hiddenSeries) : null;
             var opts = new VegaToRTDRenderer.RenderOptions
             {
@@ -364,40 +366,41 @@ public class VegaChartLoader : MonoBehaviour
                 UseSeriesLineThickness = useSeriesLineThickness,
                 UseBarTextures = useBarTextures,
                 SymbolClearance = symbolClearance,
-                SeriesSymbolOverrides = new[] { seriesSymbol0, seriesSymbol1, seriesSymbol2, seriesSymbol3 },
+                SeriesSymbolOverrides = ResolveSeriesSymbols(),
                 RangeFilterStart = rangeFilterStart,
                 RangeFilterEnd = rangeFilterEnd
             };
             var (grid, nodes) = VegaToRTDRenderer.Generate(_currentVegaSpec, _windowStart, _windowSize, _windowYMin, _windowYMax, opts);
 
-            UnityEngine.Debug.Log($"Generated {grid.GetLength(0)}x{grid.GetLength(1)} RTD grid with {nodes.Count} nodes");
+            AppLog.Detail(LogArea.Render, $"Generated {grid.GetLength(0)}x{grid.GetLength(1)} RTD grid with {nodes.Count} nodes");
 
             // Generate graph visualization from nodes
             _graphVisualizer.GenerateGraph(nodes, chartType, dataName);
 
-            // Set up visibility filtering
-            bool isFullyZoomedOut = (_windowSize >= _maxViewportPoints) && _windowStart == 0;
+            // Set up visibility filtering: show every node only when the window
+            // holds all the data; otherwise hide what falls outside it.
+            bool showsAllData = _windowStart == 0 && _windowSize >= _totalDataPoints;
 
-            if (isFullyZoomedOut)
+            if (showsAllData)
             {
-                UnityEngine.Debug.Log(" Fully zoomed out - showing all nodes");
+                AppLog.Detail(LogArea.Render, "Window holds all data - showing all nodes");
                 _graphVisualizer.ShowAllNodes();
             }
             else
             {
                 // Extract X-values from pre-Y-filter data for X-axis tick visibility
-                var xViewportValues = windowedDataBeforeYFilter
+                var xWindowValues = windowedDataBeforeYFilter
                     .Where(d => d.ContainsKey(xField))
                     .Select(d => d[xField])
                     .Distinct()
                     .ToList();
 
-                UnityEngine.Debug.Log($"Applying visibility filter: {windowedData.Count} visible points, Y-domain [{_windowYMin}, {_windowYMax}], X-viewport values: {xViewportValues.Count}");
-                _graphVisualizer.UpdateVisibleNodes(windowedData, xField, yField, _windowYMin, _windowYMax, xViewportValues);
+                AppLog.Detail(LogArea.Render, $"Applying visibility filter: {windowedData.Count} visible points, Y-domain [{_windowYMin}, {_windowYMax}], X-window values: {xWindowValues.Count}");
+                _graphVisualizer.UpdateVisibleNodes(windowedData, xField, yField, _windowYMin, _windowYMax, xWindowValues);
             }
 
-            // Update viewport overlay to show current zoom/pan state
-            _graphVisualizer.UpdateViewportOverlay(_windowStart, _windowSize, _totalDataPoints, _windowYMin, _windowYMax, _dataYMin, _dataYMax);
+            // Update the window overlay to show which part of the data is drawn
+            _graphVisualizer.UpdateWindowOverlay(_windowStart, _windowSize, _totalDataPoints, _windowYMin, _windowYMax, _dataYMin, _dataYMax);
 
             // Count non-zero pixels for debug
             int nonZero = 0;
@@ -405,10 +408,10 @@ public class VegaChartLoader : MonoBehaviour
                 for (int c = 0; c < grid.GetLength(1); c++)
                     if (grid[r, c] != 0) nonZero++;
 
-            UnityEngine.Debug.Log($"Grid contains {nonZero} non-background pixels");
+            AppLog.Detail(LogArea.Render, $"Grid contains {nonZero} non-background pixels");
 
             // Clear any active highlights from the previous chart before displaying the new one.
-            _rtdUpdater.RefreshScreen();
+            _rtdUpdater.RefreshScreen(brailleTitle: false);
 
             // Display on RTD device
             _rtdUpdater.DisplayImage(grid);
@@ -420,34 +423,26 @@ public class VegaChartLoader : MonoBehaviour
             _rtdUpdater.SetChartType(chartType);
             _rtdUpdater.SetInterleavedNavigation(interleavedNavigation);
             _rtdUpdater.SetUseSeriesSymbols(useSeriesSymbols);
-            _rtdUpdater.SetSeriesSymbolOverrides(new[] { seriesSymbol0, seriesSymbol1, seriesSymbol2, seriesSymbol3 });
+            _rtdUpdater.SetSeriesSymbolOverrides(ResolveSeriesSymbols());
             _rtdUpdater.SetHighlightConfigs(gestureConfig, agentConfig, navConfig);
 
             // Set chart title for braille display and refresh
             string chartTitle = chart.DisplayName ?? $"{chart.chartType} - {chart.dataName}";
-            _rtdUpdater.SetChartTitle(chartTitle);
-            _rtdUpdater.DisplayBrailleLabel(chartTitle);
+            _rtdUpdater.SetChartTitle(chartTitle);   // kept current for the refresh button
+            if (brailleTitle)
+                _rtdUpdater.DisplayBrailleLabel(chartTitle);
 
-            UnityEngine.Debug.Log($"DisplayImage() and DisplayImageInUnityFromBase() called successfully");
+            AppLog.Detail(LogArea.Render, $"DisplayImage() and DisplayImageInUnityFromBase() called successfully");
             _rtdUpdater.EnableDataPointNavigation(true, false);
 
             // Publish layer data to agent
             string currentHiddenKey = string.Join(",", hiddenSeries);
-            if (_currentVegaSpec.Layer != null && _currentVegaSpec.Layer.Count > 0)
-            {
-                var currentLayer = _currentVegaSpec.Layer
-                    .FirstOrDefault(l => l.Data?.Values != null && l.Data.Values.Count == _totalDataPoints);
-
-                if (currentLayer != null)
-                {
-                    ChartMQTTPublisher.PublishCurrentLayerData(_mqttManager, _currentVegaSpec, currentLayer.Name, _windowStart, _windowSize, _windowYMin, _windowYMax, hiddenSeries.Count > 0 ? new HashSet<string>(hiddenSeries) : null);
-                }
-            }
-            else
-            {
-                string publishMarkType = _currentVegaSpec.GetMarkType();
-                ChartMQTTPublisher.PublishCurrentLayerData(_mqttManager, _currentVegaSpec, publishMarkType, _windowStart, _windowSize, _windowYMin, _windowYMax, hiddenSeries.Count > 0 ? new HashSet<string>(hiddenSeries) : null);
-            }
+            string publishMarkType = _currentVegaSpec.GetMarkType();
+            // The presentation only isolates series for display, so the agent still
+            // gets the whole chart. A filter does limit what it sees.
+            var hiddenForAgent = _presentationActive ? null
+                : (hiddenSeries.Count > 0 ? new HashSet<string>(hiddenSeries) : null);
+            ChartMQTTPublisher.PublishCurrentLayerData(_mqttManager, _currentVegaSpec, publishMarkType, _windowStart, _windowSize, _windowYMin, _windowYMax, hiddenForAgent);
             _hiddenSeriesPublishedKey = currentHiddenKey;
         }
         catch (Exception ex)
@@ -463,80 +458,113 @@ public class VegaChartLoader : MonoBehaviour
     /// </summary>
     public void LoadChart(int option)
     {
-        UnityEngine.Debug.Log($"LoadChart called for option {option}");
+        AppLog.Detail(LogArea.Chart, $"LoadChart called for option {option}");
 
         var chart = ResolveChart(option);
         if (chart == null) return;
 
-        UnityEngine.Debug.Log($"Selected chart {option}: {chart.DisplayName} (json={chart.jsonFilePath}, png={chart.pngFilePath})");
+        AppLog.Info(LogArea.Chart, $"Selected chart {option}: {chart.DisplayName} (json={chart.jsonFilePath}, png={chart.pngFilePath})");
 
         var spec = ParseSpec(chart);
         if (spec == null) return;
 
-        _rawVegaJson = chart.schemaJson;
         _currentVegaSpec = spec;
+        _rtdUpdater.ClearOverviewModeForLoad();   // also cancels a pending start
+        hiddenSeries.Clear();   // series names are chart-specific
+        _agentHiddenSeries.Clear();   // the agent resets its filter on every load too
+        _presentationActive = false;
 
         ApplySpec(chart, option);
+
+        // The rest of the request runs after this load, so don't auto-start.
+        bool suppressed = _suppressNextAutoStart;
+        _suppressNextAutoStart = false;
+        if (autoStartPresentation && !suppressed)
+            RequestPresentation();
+    }
+
+    private bool _suppressNextAutoStart;
+
+    /// <summary>The next load does not start the presentation on its own.</summary>
+    public void SuppressNextAutoStart() => _suppressNextAutoStart = true;
+
+    /// <summary>Clear an unused suppression (its load didn't happen).</summary>
+    public void AllowAutoStart() => _suppressNextAutoStart = false;
+
+    private const string NoWalkthrough = "There's no walkthrough for this chart.";
+    private const float GeneratedTextTimeout = 30f;
+    private Coroutine _generatedTextTimeout;
+
+    /// <summary>
+    /// Start the layered presentation now if its text is ready, when the agent's
+    /// generated text arrives, or say there is no walkthrough.
+    /// </summary>
+    public void RequestPresentation()
+    {
+        if (_currentChart == null || _currentVegaSpec == null) return;
+        var overview = GetEffectiveOverview();
+        if (overview != null && overview.ContainsKey("title"))
+        {
+            _rtdUpdater.StartOverviewPresentation();
+            return;
+        }
+        string key = OverviewKey(_currentChart.dataName, _currentChart.chartType);
+        if (_noGeneratedOverview.Contains(key))
+        {
+            _rtdUpdater.SpeakNotice(NoWalkthrough);
+            return;
+        }
+        // Generated text arrives a few seconds after load. Wait for it so no layer
+        // speaks a placeholder.
+        _presentationPendingFor = key;
+        if (_generatedTextTimeout != null) StopCoroutine(_generatedTextTimeout);
+        _generatedTextTimeout = StartCoroutine(GiveUpOnGeneratedText(key));
+    }
+
+    private IEnumerator GiveUpOnGeneratedText(string key)
+    {
+        yield return new WaitForSeconds(GeneratedTextTimeout);
+        _generatedTextTimeout = null;
+        if (_presentationPendingFor != key) yield break;
+        _presentationPendingFor = null;
+        AppLog.Info(LogArea.Presentation, $"No layer text for '{key}' after {GeneratedTextTimeout}s");
+        _rtdUpdater.SpeakNotice(NoWalkthrough);
+    }
+
+    /// <summary>Stop waiting to start the presentation.</summary>
+    public void CancelPendingPresentation()
+    {
+        _presentationPendingFor = null;
+        if (_generatedTextTimeout != null)
+        {
+            StopCoroutine(_generatedTextTimeout);
+            _generatedTextTimeout = null;
+        }
     }
 
     /// <summary>
-    /// Apply a parsed Vega spec: resolve layers, run transforms, size the viewport,
+    /// Apply a parsed Vega spec: resolve layers, run transforms, size the window,
     /// compute the Y-range, push metadata to MQTT, and render the RTD grid.
     /// </summary>
     private void ApplySpec(DiscoveredChart chart, int option)
     {
-        if (_currentVegaSpec.Layer != null)
-        {
-            UnityEngine.Debug.Log($"Deserialized {_currentVegaSpec.Layer.Count} layers from JSON");
-            availableLayerNames.Clear();
-            for (int i = 0; i < _currentVegaSpec.Layer.Count; i++)
-            {
-                var layer = _currentVegaSpec.Layer[i];
-                UnityEngine.Debug.Log($"Layer {i}: name='{layer.Name}', hasTransform={layer.Transform != null}, transformCount={layer.Transform?.Count ?? 0}");
-                if (!string.IsNullOrEmpty(layer.Name))
-                {
-                    availableLayerNames.Add(layer.Name);
-                }
-            }
-            if (availableLayerNames.Count > 0)
-            {
-                UnityEngine.Debug.Log($"Available layers for manual selection: {string.Join(", ", availableLayerNames)}");
-
-                // Set state needed before applying layer
-                _maxViewportPoints = 25;
-                _currentChart = chart;
-
-                // Apply the first layer so top-level encoding/mark/data are populated
-                string initialLayer = (!string.IsNullOrEmpty(manualLayerName) && availableLayerNames.Contains(manualLayerName))
-                    ? manualLayerName
-                    : availableLayerNames[0];
-                ApplyNamedLayer(initialLayer);
-                return; // ApplyNamedLayer calls GenerateAndDisplayRTDGrid, so we're done
-            }
-        }
-        else
-        {
-            availableLayerNames.Clear();
-        }
-
-        // Apply transforms to data if specified in spec (for single-layer charts)
+        // Apply transforms to data if specified in spec
         if (_currentVegaSpec.Transform != null && _currentVegaSpec.Transform.Count > 0 &&
-            _currentVegaSpec.Data?.Values != null &&
-            (_currentVegaSpec.Layer == null || _currentVegaSpec.Layer.Count == 0))
+            _currentVegaSpec.Data?.Values != null)
         {
             var transformEngine = new VegaTransformEngine();
-            string xField = _currentVegaSpec.Encoding?.X?.Field;
-            UnityEngine.Debug.Log($"Applying {_currentVegaSpec.Transform.Count} transforms to data (X-field: {xField ?? "none"})");
+            AppLog.Detail(LogArea.Chart, $"Applying {_currentVegaSpec.Transform.Count} transforms to data");
 
             var transformedData = transformEngine.ApplyTransforms(
                 _currentVegaSpec.Data.Values,
-                _currentVegaSpec.Transform,
-                xField
+                _currentVegaSpec.Transform
             );
 
             _currentVegaSpec.Data.Values = transformedData;
-            UnityEngine.Debug.Log($"Transformed data: {transformedData.Count} rows");
+            AppLog.Detail(LogArea.Chart, $"Transformed data: {transformedData.Count} rows");
         }
+
+        StampRowIds(_currentVegaSpec.Data?.Values);
 
         _currentChart = chart;
 
@@ -551,7 +579,7 @@ public class VegaChartLoader : MonoBehaviour
                 .Select(d => d[xFieldForCount].ToString())
                 .Distinct()
                 .Count();
-            UnityEngine.Debug.Log($"Multi-series detected (color field: '{colorField}'): {_totalDataPoints} unique X values (raw rows: {_currentVegaSpec.Data.Values.Count})");
+            AppLog.Detail(LogArea.Chart, $"Multi-series detected (color field: '{colorField}'): {_totalDataPoints} unique X values (raw rows: {_currentVegaSpec.Data.Values.Count})");
 
             // Discover available series names for inspector
             availableSeries = _currentVegaSpec.Data.Values
@@ -559,7 +587,7 @@ public class VegaChartLoader : MonoBehaviour
                 .Select(d => d[colorField].ToString())
                 .Distinct()
                 .ToList();
-            UnityEngine.Debug.Log($"Available series: [{string.Join(", ", availableSeries)}]");
+            AppLog.Detail(LogArea.Chart, $"Available series: [{string.Join(", ", availableSeries)}]");
         }
         else
         {
@@ -570,7 +598,7 @@ public class VegaChartLoader : MonoBehaviour
         // Determine chart type
         string chartType = _currentVegaSpec.GetMarkType();
 
-        // Set max viewport points based on chart type
+        // Set max window points based on chart type
         // Line charts: 50 pins wide / 2 = 25 max points
         // Bar charts: depends on thick mode - need min 3px bar + 1px gap = max 12 bars
         // Scatter plots can show all points (overlapping is OK)
@@ -578,21 +606,19 @@ public class VegaChartLoader : MonoBehaviour
         bool isStackedBar = (chartType == "bar" && colorField2 != null);
         if (chartType == "bar" && (useThickBars || isStackedBar))
         {
-            _maxViewportPoints = maxBarsDisplayed;
+            _maxWindowPoints = maxBarsDisplayed;
         }
         else if (chartType == "line" || chartType == "bar")
         {
-            _maxViewportPoints = 25;
+            _maxWindowPoints = 25;
         }
         else
         {
-            _maxViewportPoints = _totalDataPoints;  // No limit for scatter
+            _maxWindowPoints = _totalDataPoints;  // No limit for scatter
         }
 
         // Calculate full data Y-range
-        // For multi-layer specs, encoding may be inside layers rather than at top level
-        string yField = _currentVegaSpec.Encoding?.Y?.Field
-            ?? _currentVegaSpec.Layer?.FirstOrDefault()?.Encoding?.Y?.Field;
+        string yField = _currentVegaSpec.Encoding?.Y?.Field;
 
         if (yField != null && _currentVegaSpec.Data?.Values != null)
         {
@@ -618,11 +644,11 @@ public class VegaChartLoader : MonoBehaviour
             _dataYMax = 5f;
         }
 
-        // Initialize viewport to show reasonable starting view
+        // Start the window at the first point
         _windowStart = 0;
-        _windowSize = Math.Min(_maxViewportPoints, _totalDataPoints);
+        _windowSize = Math.Min(_maxWindowPoints, _totalDataPoints);
 
-        // Initialize Y-viewport from spec domain or data range
+        // Initialize Y-window from spec domain or data range
         if (_currentVegaSpec.Encoding?.Y?.Scale != null && _currentVegaSpec.Encoding.Y.Scale.Domain != null)
         {
             (_windowYMin, _windowYMax) = _currentVegaSpec.Encoding.Y.Scale.GetNumericDomain();
@@ -637,7 +663,7 @@ public class VegaChartLoader : MonoBehaviour
         _fullYMin = _windowYMin;
         _fullYMax = _windowYMax;
 
-        UnityEngine.Debug.Log($"Initialized viewport: X=[{_windowStart}, {_windowStart + _windowSize - 1}] of {_totalDataPoints}, Y=[{_windowYMin:F2}, {_windowYMax:F2}]");
+        AppLog.Detail(LogArea.Chart, $"Initialized window: X=[{_windowStart}, {_windowStart + _windowSize - 1}] of {_totalDataPoints}, Y=[{_windowYMin:F2}, {_windowYMax:F2}]");
 
         // Generate PNG preview if missing (optional, won't fail if generator not configured)
         if (_previewGenerator != null)
@@ -646,88 +672,30 @@ public class VegaChartLoader : MonoBehaviour
         }
 
         // Publish chart data (metadata + PNG) to MQTT for agent UI
-        ChartMQTTPublisher.PublishChartToMQTT(_mqttManager, chart);
+        ChartMQTTPublisher.PublishChartToMQTT(_mqttManager, chart, GetRenderedChartInfo());
 
         // Generate and display using C# renderer
-        GenerateAndDisplayRTDGrid(chart);
+        GenerateAndDisplayRTDGrid(chart, brailleTitle: true);
 
         // Set file option without reloading CSV
         _rtdUpdater.SetFileOptionWithoutReload(option);
     }
 
     /// <summary>
-    /// Apply a named data layer (e.g. "yearly", "quarterly", "monthly") from the Vega spec.
-    /// Replaces top-level data, encoding, and mark with the layer's values, then re-renders.
+    /// Give every row a stable id ("row-&lt;index&gt;") so the agent's rows and the pins
+    /// can be matched exactly. Rows that already have an _id keep it.
     /// </summary>
-    public void ApplyNamedLayer(string layerName)
+    private static void StampRowIds(List<Dictionary<string, object>> rows)
     {
-        if (_currentVegaSpec?.Layer == null || _currentChart == null)
-            return;
-
-        var layer = _currentVegaSpec.Layer.Find(l => l.Name == layerName);
-        if (layer == null)
+        if (rows == null) return;
+        for (int i = 0; i < rows.Count; i++)
         {
-            UnityEngine.Debug.LogWarning($"Layer '{layerName}' not found in spec");
-            return;
+            if (rows[i] != null && !rows[i].ContainsKey(RowIdField))
+                rows[i][RowIdField] = $"row-{i}";
         }
-
-        // Restore original data before applying layer transforms (re-deserialize to avoid mutation)
-        if (_rawVegaJson != null)
-        {
-            var freshSpec = JsonConvert.DeserializeObject<VegaSpec>(_rawVegaJson);
-            if (freshSpec?.Data?.Values != null)
-                _currentVegaSpec.Data.Values = freshSpec.Data.Values;
-        }
-
-        // Apply layer transforms to data
-        if (layer.Data?.Values != null)
-        {
-            _currentVegaSpec.Data.Values = layer.Data.Values;
-        }
-        else if (layer.Transform != null && layer.Transform.Count > 0)
-        {
-            var engine = new VegaTransformEngine();
-            var transformedData = engine.ApplyTransforms(
-                _currentVegaSpec.Data.Values,
-                layer.Transform);
-            _currentVegaSpec.Data.Values = transformedData;
-        }
-
-        // Apply layer encoding and mark
-        if (layer.Encoding != null)
-            _currentVegaSpec.Encoding = layer.Encoding;
-        if (layer.Mark != null)
-            _currentVegaSpec.Mark = layer.Mark;
-
-        // Reset windowing for new data size
-        _totalDataPoints = _currentVegaSpec.Data.Values.Count;
-        _windowStart = 0;
-        _windowSize = Math.Min(_totalDataPoints, _maxViewportPoints);
-
-        // Initialize Y-viewport from layer's encoding scale domain or data range
-        string yField = _currentVegaSpec.Encoding?.Y?.Field;
-        if (_currentVegaSpec.Encoding?.Y?.Scale?.Domain != null)
-        {
-            (_windowYMin, _windowYMax) = _currentVegaSpec.Encoding.Y.Scale.GetNumericDomain();
-        }
-        else if (yField != null)
-        {
-            var yValues = _currentVegaSpec.Data.Values
-                .Where(d => d.ContainsKey(yField))
-                .Select(d => Convert.ToSingle(d[yField]))
-                .ToList();
-            _windowYMin = yValues.Any() ? yValues.Min() : 0f;
-            _windowYMax = yValues.Any() ? yValues.Max() : 1f;
-        }
-        _fullYMin = _windowYMin;
-        _fullYMax = _windowYMax;
-        _dataYMin = _windowYMin;
-        _dataYMax = _windowYMax;
-
-        UnityEngine.Debug.Log($"Applied layer '{layerName}' ({_totalDataPoints} data points, Y=[{_windowYMin:F2}, {_windowYMax:F2}])");
-        GenerateAndDisplayRTDGrid(_currentChart);
     }
 
+    public const string RowIdField = "_id";
 
     /// <summary>
     /// Force a refresh of the current chart display.
@@ -736,7 +704,7 @@ public class VegaChartLoader : MonoBehaviour
     {
         if (_currentChart != null && _currentVegaSpec != null)
         {
-            UnityEngine.Debug.Log(" Refreshing chart display");
+            AppLog.Detail(LogArea.Render, "Refreshing chart display");
             GenerateAndDisplayRTDGrid(_currentChart);
         }
         else
@@ -776,8 +744,10 @@ public class VegaChartLoader : MonoBehaviour
     /// </summary>
     public (string description, bool found) SetOverviewLayer(int layerIndex)
     {
+        _presentationActive = true;
+        _presentationLayerIndex = layerIndex;
         int maxLayers = GetOverviewLayerCount();
-        var overview = _currentVegaSpec?.Overview;
+        var overview = GetEffectiveOverview();
         bool isMultiSeries = availableSeries.Count > 0 && availableSeries[0] != "(all data)";
 
         // Layer 0: title + full chart
@@ -840,6 +810,225 @@ public class VegaChartLoader : MonoBehaviour
         hiddenSeries.Clear();
         GenerateAndDisplayRTDGrid(_currentChart);
         return GetOverviewDescription(overview, "title");
+    }
+
+    /// <summary>
+    /// Leave the layered presentation: show the user's filter again and restart from
+    /// the first layer next time.
+    /// </summary>
+    public void EndOverviewPresentation()
+    {
+        if (_presentationActive) AppLog.Info(LogArea.Presentation, "Ended");
+        _presentationActive = false;
+        _rtdUpdater.ResetOverviewLayer();
+        if (_currentChart == null || _currentVegaSpec == null) return;
+        hiddenSeries.Clear();
+        hiddenSeries.AddRange(_agentHiddenSeries);
+        GenerateAndDisplayRTDGrid(_currentChart);
+    }
+
+    private string _presentationPendingFor;   // chart key waiting for generated text to start
+    private bool _presentationActive;         // a layered-presentation layer is on the display
+    private int _presentationLayerIndex = -1;
+
+    /// <summary>
+    /// Store the agent's filter; unknown series are ignored. Doesn't redraw: the caller
+    /// ends the presentation (which restores the filter) or calls ShowAgentFilter.
+    /// </summary>
+    public void SetAgentFilter(IEnumerable<string> names)
+    {
+        _agentHiddenSeries.Clear();
+        if (names != null)
+            _agentHiddenSeries.AddRange(names.Where(n => availableSeries.Contains(n)).Distinct());
+        AppLog.Info(LogArea.Chart, $"Hidden series: [{string.Join(", ", _agentHiddenSeries)}]");
+    }
+
+    /// <summary>Show the agent's filter. The redraw republishes the view to the agent.</summary>
+    public void ShowAgentFilter()
+    {
+        _presentationActive = false;
+        if (_currentChart == null || _currentVegaSpec == null) return;
+        hiddenSeries.Clear();
+        hiddenSeries.AddRange(_agentHiddenSeries);
+        GenerateAndDisplayRTDGrid(_currentChart);
+    }
+
+    /// <summary>The presentation layer on the display ({layer, series}), or null.</summary>
+    public Dictionary<string, object> CurrentPresentationLayer()
+    {
+        if (!_presentationActive || _currentVegaSpec == null || _presentationLayerIndex < 0) return null;
+        int maxLayers = GetOverviewLayerCount();
+        bool isMultiSeries = availableSeries.Count > 0 && availableSeries[0] != "(all data)";
+        int i = _presentationLayerIndex;
+        string layer = i == 0 ? "title" : i == 1 ? "x_axis" : i == 2 ? "y_axis"
+                     : i == maxLayers - 1 ? "summary" : isMultiSeries ? "series" : "data";
+        var info = new Dictionary<string, object> { ["layer"] = layer };
+        if (layer == "series" && i - 3 >= 0 && i - 3 < availableSeries.Count)
+            info["series"] = availableSeries[i - 3];
+        return info;
+    }
+
+    /// <summary>
+    /// During the presentation, show the series an answer points at that the current
+    /// layer hides. The next layer step isolates again. Returns true if it redrew.
+    /// </summary>
+    public bool RevealSeriesFor(IEnumerable<string> rowIds, IEnumerable<string> seriesNames)
+    {
+        if (!_presentationActive || _currentChart == null || _currentVegaSpec == null) return false;
+        string colorField = _currentVegaSpec.Encoding?.GetColorField();
+        bool isMultiSeries = colorField != null && availableSeries.Count > 0 && availableSeries[0] != "(all data)";
+        var wanted = new HashSet<string>(seriesNames ?? Enumerable.Empty<string>());
+        var ids = new HashSet<string>(rowIds ?? Enumerable.Empty<string>());
+        if (ids.Count > 0 && _currentVegaSpec.Data?.Values != null)
+        {
+            foreach (var row in _currentVegaSpec.Data.Values)
+            {
+                if (row == null || !row.TryGetValue(RowIdField, out var id) || !ids.Contains(id?.ToString())) continue;
+                if (!isMultiSeries) wanted.Add("(all data)");
+                else if (row.TryGetValue(colorField, out var s) && s != null) wanted.Add(s.ToString());
+            }
+        }
+        int removed = hiddenSeries.RemoveAll(s => wanted.Contains(s));
+        if (removed == 0) return false;
+        AppLog.Info(LogArea.Presentation, $"Answer reveals: [{string.Join(", ", wanted)}]");
+        GenerateAndDisplayRTDGrid(_currentChart);
+        return true;
+    }
+
+    // Agent-generated layer text for charts without an "overview" block, keyed by
+    // data name and chart type (a line and a bar chart can share data).
+    private readonly Dictionary<string, Dictionary<string, string>> _generatedOverviews =
+        new Dictionary<string, Dictionary<string, string>>();
+    private readonly HashSet<string> _noGeneratedOverview = new HashSet<string>();
+
+    private static string OverviewKey(string dataName, string chartType) => $"{dataName}|{chartType}";
+
+    /// <summary>
+    /// Store the agent's layer text for a chart. Null means there is nothing to
+    /// describe, so there is no walkthrough.
+    /// </summary>
+    public void SetGeneratedOverview(string dataName, string chartType, Dictionary<string, string> overview)
+    {
+        if (string.IsNullOrEmpty(dataName)) return;
+        if (string.IsNullOrEmpty(chartType) && _currentChart?.dataName == dataName)
+            chartType = _currentChart.chartType;   // an agent that doesn't send the type
+        string key = OverviewKey(dataName, chartType);
+        bool waiting = _presentationPendingFor == key &&
+                       _currentChart != null && OverviewKey(_currentChart.dataName, _currentChart.chartType) == key;
+
+        if (overview == null || overview.Count == 0)
+        {
+            _noGeneratedOverview.Add(key);
+            AppLog.Info(LogArea.Presentation, $"No layer text for '{key}'");
+            if (waiting)
+            {
+                CancelPendingPresentation();
+                _rtdUpdater.SpeakNotice(NoWalkthrough);
+            }
+            return;
+        }
+
+        _generatedOverviews[key] = overview;
+        _noGeneratedOverview.Remove(key);
+        AppLog.Info(LogArea.Presentation, $"Generated layer text received for '{key}' ({overview.Count} layers)");
+        if (waiting)
+        {
+            CancelPendingPresentation();
+            _rtdUpdater.StartOverviewPresentation();
+        }
+    }
+
+    /// <summary>The spec's own layer text wins; otherwise the agent's generated text.</summary>
+    private Dictionary<string, string> GetEffectiveOverview()
+    {
+        var authored = _currentVegaSpec?.Overview;
+        if (authored != null && authored.Count > 0) return authored;
+        if (_currentChart == null) return authored;
+        return _generatedOverviews.TryGetValue(OverviewKey(_currentChart.dataName, _currentChart.chartType), out var generated)
+            ? generated : authored;
+    }
+
+    /// <summary>
+    /// Symbol per series: the spec's shape channel, then the Inspector slots, then the
+    /// first symbol no other series uses.
+    /// </summary>
+    private RTDGridConstants.SymbolType[] ResolveSeriesSymbols()
+    {
+        var inspector = new[] { seriesSymbol0, seriesSymbol1, seriesSymbol2, seriesSymbol3 };
+        int n = Math.Max(inspector.Length, availableSeries.Count);
+        var result = new RTDGridConstants.SymbolType[n];
+        for (int i = 0; i < n; i++)
+            result[i] = i < inspector.Length ? inspector[i] : RTDGridConstants.SymbolType.Default;
+
+        var shapeMap = _currentVegaSpec?.Encoding?.GetShapeMap(_currentVegaSpec.Encoding.GetColorField());
+        if (shapeMap != null)
+        {
+            for (int i = 0; i < availableSeries.Count; i++)
+            {
+                if (shapeMap.TryGetValue(availableSeries[i], out var shape) &&
+                    RTDGridConstants.TryParseVegaShape(shape, out var symbol))
+                    result[i] = symbol;
+            }
+        }
+
+        // Two series should never feel the same, so fill the gaps with unused
+        // symbols. They only repeat past six series.
+        int rotation = RTDGridConstants.SERIES_SYMBOLS.Length;
+        var taken = new HashSet<RTDGridConstants.SymbolType>();
+        for (int i = 0; i < availableSeries.Count && i < n; i++)
+            if (result[i] != RTDGridConstants.SymbolType.Default) taken.Add(result[i]);
+        int next = 0;
+        for (int i = 0; i < availableSeries.Count && i < n; i++)
+        {
+            if (result[i] != RTDGridConstants.SymbolType.Default) continue;
+            var pick = (RTDGridConstants.SymbolType)(i % rotation);
+            for (int tries = 0; tries < rotation; tries++, next++)
+            {
+                var candidate = (RTDGridConstants.SymbolType)(next % rotation);
+                if (!taken.Contains(candidate)) { pick = candidate; next++; break; }
+            }
+            result[i] = pick;
+            taken.Add(pick);
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// What the display shows, for the agent: each series' symbol by its spoken name,
+    /// and the Y range and ticks drawn (the spec may not state them).
+    /// </summary>
+    private object GetRenderedChartInfo()
+    {
+        string chartType = _currentVegaSpec.GetMarkType();
+        bool multiSeries = availableSeries.Count > 0 && availableSeries[0] != "(all data)";
+        var symbols = ResolveSeriesSymbols();
+        string SymbolFor(int i)
+        {
+            var sym = (i < symbols.Length && symbols[i] != RTDGridConstants.SymbolType.Default)
+                ? symbols[i]
+                : (RTDGridConstants.SymbolType)(i % RTDGridConstants.SERIES_SYMBOLS.Length);
+            return RTDGridConstants.SpokenSymbolName(sym);
+        }
+
+        // Bars are drawn solid or textured, never with symbols; a single-series scatter
+        // uses one pin per point.
+        object series = null;
+        if (chartType != "bar" && useSeriesSymbols)
+        {
+            series = multiSeries
+                ? availableSeries.Select((name, i) => new { name, symbol = SymbolFor(i) }).ToList<object>()
+                : new List<object> { new { name = "data", symbol = chartType == "point" ? "single dot" : SymbolFor(0) } };
+        }
+
+        return new
+        {
+            chart_type = chartType,
+            series,
+            y_domain = new[] { _windowYMin, _windowYMax },
+            y_ticks = VegaToRTDRenderer.ResolveYTickValues(_currentVegaSpec.Encoding?.Y, _windowYMin, _windowYMax),
+            points_shown = _windowSize,
+            points_total = _totalDataPoints,
+        };
     }
 
     private void HideAllSeries()

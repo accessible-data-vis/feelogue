@@ -23,6 +23,8 @@ Three components communicate via MQTT:
 - **Interaction Manager** (`interaction-manager/`): Unity C# application. Processes touch and speech input, renders Vega-Lite charts as tactile pin-grid representations, and coordinates multimodal output (tactile, Braille, audio)
 - **Conversational Agent** (`agent/`): Python. Classifies intent, resolves deictic references using touch context, and runs a LangChain/GPT-4o calculation pipeline for data queries
 
+The messages between Unity and the agent are described in [docs/messages.md](docs/messages.md).
+
 ## Requirements
 
 **Platform**
@@ -38,7 +40,7 @@ Three components communicate via MQTT:
 - Python 3.10+
 - Google Cloud project with Speech-to-Text and Text-to-Speech APIs enabled
 - Picovoice Porcupine access key (free tier at console.picovoice.ai)
-- MQTT broker (tested with HiveMQ Cloud free tier)
+- MQTT broker: a local [Mosquitto](https://mosquitto.org) on `localhost:1883` (the default), or a remote broker (tested with HiveMQ Cloud free tier)
 - OpenAI API key
 
 ## Setup
@@ -86,12 +88,17 @@ Open `interaction-manager/` in Unity 2022.3. On first open, Unity will automatic
 
 **6. Run the agent**
 
+Start a local broker first (`brew install mosquitto`, then `brew services start mosquitto`), then:
+
 ```bash
 source venv/bin/activate
-jupyter notebook
+python -m agent.run            # local broker, localhost:1883 (default; --local says the same)
+python -m agent.run --remote   # remote broker from .env (TLS)
 ```
 
-Open `agent.ipynb` and run all cells.
+Unity also starts on the local broker. The **MQTT-L / MQTT-R** button in the Game View switches it to the remote broker and back; the agent and Unity must be on the same one. `agent.ipynb` still works for stepping through the agent by hand.
+
+Run the agent's tests with `python -m pytest tests/`. They need no `.env` or API key: model calls are replaced in the tests.
 
 **7. Run the Interaction Manager**
 

@@ -1,5 +1,6 @@
 using UnityEngine;
 
+/// <summary>Places the display's anchor at its calibrated offset and rotation.</summary>
 [ExecuteInEditMode]
 public class RTDAligner : MonoBehaviour
 {
@@ -38,7 +39,7 @@ public class RTDAligner : MonoBehaviour
             // Fix rotation
             transform.rotation = Quaternion.Euler(fixedRotation);
 
-            Debug.Log($"{name} detached and positioned at {transform.position}");
+            AppLog.Detail(LogArea.Device, $"{name} detached and positioned at {transform.position}");
         }
     }
 

@@ -23,7 +23,7 @@ public static class TouchDebugger
         public TapResult Result;
         public object LastMotion;
 
-        // Thresholds (optional — leave at 0 to omit from log)
+        // Thresholds (optional, leave at 0 to omit from log)
         public float MinDuration;
         public float MaxDuration;
         public float Cooldown;
@@ -90,29 +90,29 @@ public static class TouchDebugger
             log.AppendLine($"  - Same nodes: {info.SameNodes}");
         }
 
-        UnityEngine.Debug.Log(log.ToString());
+        AppLog.Detail(LogArea.Touch, log.ToString());
     }
 
     public static void LogTouchCoordinates(HashSet<Vector2Int> coords, string context = "")
     {
         if (coords == null || coords.Count == 0)
         {
-            Debug.Log($"[TouchDebug{(string.IsNullOrEmpty(context) ? "" : $" - {context}")}] No coordinates");
+            AppLog.Detail(LogArea.Touch, $"[TouchDebug{(string.IsNullOrEmpty(context) ? "" : $" - {context}")}] No coordinates");
             return;
         }
 
-        Debug.Log($"[TouchDebug{(string.IsNullOrEmpty(context) ? "" : $" - {context}")}] " +
+        AppLog.Detail(LogArea.Touch, $"[TouchDebug{(string.IsNullOrEmpty(context) ? "" : $" - {context}")}] " +
                   $"Coords ({coords.Count}): {string.Join(", ", coords)}");
     }
 
     public static void LogGestureClassification(object motionType, float velocityY, float velocityXZ, string fingerName)
     {
-        Debug.Log($"[GestureDebug - {fingerName}] Motion: {motionType}, vY: {velocityY:F3}, vXZ: {velocityXZ:F3}");
+        AppLog.Detail(LogArea.Touch, $"[GestureDebug - {fingerName}] Motion: {motionType}, vY: {velocityY:F3}, vXZ: {velocityXZ:F3}");
     }
 
     public static void LogTiming(string fingerName, float duration, float minDuration, float maxDuration, bool isValid)
     {
-        Debug.Log($"[TimingDebug - {fingerName}] Duration: {duration:F3}s " +
+        AppLog.Detail(LogArea.Touch, $"[TimingDebug - {fingerName}] Duration: {duration:F3}s " +
                   $"(min: {minDuration:F3}, max: {maxDuration:F3}) → {(isValid ? "VALID" : "INVALID")}");
     }
 }

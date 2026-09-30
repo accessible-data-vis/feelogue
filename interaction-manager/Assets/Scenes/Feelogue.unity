@@ -23112,11 +23112,11 @@ MonoBehaviour:
   agentConfig:
     Shape: 0
     Anim: 1
-    Duration: 15
+    Duration: -1
     UseBatchSend: 0
   navConfig:
     Shape: 0
-    Anim: 0
+    Anim: 2
     Duration: -1
     UseBatchSend: 0
   hiddenSeries: []
@@ -23124,9 +23124,6 @@ MonoBehaviour:
   rangeFilterStart: -1
   rangeFilterEnd: -1
   maxBarsDisplayed: 10
-  useManualLayerSelection: 1
-  manualLayerName: 
-  availableLayerNames: []
   chartType: 
 --- !u!4 &272422464
 Transform:
@@ -70562,7 +70559,7 @@ MonoBehaviour:
   graphVisualizerService: {fileID: 213815323}
   graphLoader: {fileID: 272422463}
   waitForMqttBeforeSerial: 1
-  rtdDeviceConnected: 1
+  rtdDeviceConnected: 0
   rtdRoot: {fileID: 244378263}
   speechSettings: {fileID: 11400000, guid: 358d41011042842b0a84cd0084134398, type: 2}
   serialPortPath: 
@@ -172844,6 +172841,7 @@ MonoBehaviour:
   agentWakeWordService: {fileID: 882419911}
   mqttManagerService: {fileID: 1927371214}
   textToSpeechService: {fileID: 359106120}
+  speechSettings: {fileID: 11400000, guid: 358d41011042842b0a84cd0084134398, type: 2}
   rtdUpdaterService: {fileID: 838068063}
   graphVisualizerService: {fileID: 213815323}
   _agentResponseHandler: {fileID: 956547954}
@@ -176669,6 +176667,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 3557434566810426996, guid: 15d3b5cf5cea75344a4482323bc124a8, type: 3}
+      propertyPath: _mainCamera
+      value: 
+      objectReference: {fileID: 1776077984}
     - target: {fileID: 166326, guid: ae56ec35d0bcbba49962ea56f2aaa0fb, type: 3}
       propertyPath: m_Name
       value: Service Provider-First
@@ -176769,10 +176771,6 @@ PrefabInstance:
       propertyPath: _preventInitializingTrackingMode
       value: 0
       objectReference: {fileID: 0}
-    - target: {fileID: 3557434566810426996, guid: 15d3b5cf5cea75344a4482323bc124a8, type: 3}
-      propertyPath: _mainCamera
-      value: 
-      objectReference: {fileID: 1776077984}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects:

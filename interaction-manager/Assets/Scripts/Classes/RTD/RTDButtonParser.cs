@@ -1,7 +1,5 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 
 
@@ -15,38 +13,32 @@ public class RTDButtonParser : MonoBehaviour, InterfaceRTDButtonParser
     public event Action Function1Pressed = delegate { };
     public event Action Function1Released = delegate { };
     public event Action Function2Pressed = delegate { };
+    public event Action Function2Released = delegate { };
     public event Action Function3Pressed = delegate { };
+    public event Action Function3Released = delegate { };
     public event Action Function4Pressed = delegate { };
+    public event Action Function4Released = delegate { };
 
-    // combination events
-    public event Action<PanningAction, FunctionAction> CombinationPressed = delegate { };
-    public event Action<PanningAction, FunctionAction> CombinationReleased = delegate { };
-    public event Action BothPanButtonsPressed = delegate { };
+    // The device sends each button group's current state as a bitmask on every
+    // change: pan packet[9] holds PanningAction bits (0x04 Prev, 0x02 Next), function
+    // packet[8] holds FunctionAction bits (0x80 F1 .. 0x10 F4), 0x00 means nothing is
+    // down. Diffing against the last state gives releases (falling) and presses (rising).
+    private byte _panState;
+    private byte _funcState;
 
-    // immediate press/release events
-    public event Action PanNextPressedImmediate = delegate { };
-    public event Action PanPrevPressedImmediate = delegate { };
-
-    // state tracking
-    private HashSet<PanningAction> _pressedPanButtons = new HashSet<PanningAction>();
-    private HashSet<FunctionAction> _pressedFunctionButtons = new HashSet<FunctionAction>();
-    private HashSet<PanningAction> _panButtonsInCombination = new HashSet<PanningAction>();
-    private HashSet<FunctionAction> _functionButtonsInCombination = new HashSet<FunctionAction>();
-
-    // per-button coroutine tracking
-    private Dictionary<PanningAction, Coroutine> _delayedPanActions = new Dictionary<PanningAction, Coroutine>();
-    private Dictionary<FunctionAction, Coroutine> _delayedFunctionActions = new Dictionary<FunctionAction, Coroutine>();
-    private bool _bothPanButtonsTriggered = false;
-
-    private const float COMBINATION_DELAY = 0.1f;
+    // Deterministic per-bit event order
+    private static readonly PanningAction[] PAN_KEYS = { PanningAction.Prev, PanningAction.Next };
+    private static readonly FunctionAction[] FUNC_KEYS = { FunctionAction.F1, FunctionAction.F2, FunctionAction.F3, FunctionAction.F4 };
 
     // Action lookup maps for press/release events
     private Dictionary<PanningAction, (string log, System.Action pressAction, System.Action releaseAction)> _panActionMap;
     private Dictionary<FunctionAction, (string log, System.Action pressAction, System.Action releaseAction)> _functionActionMap;
-    
+
     // Raw key constants
     private const byte PAN_CODE = 0x12;
     private const byte FUNC_CODE = 0x32;
+    private const byte PAN_BITS = 0x06;   // Prev | Next
+    private const byte FUNC_BITS = 0xF0;  // F1 | F2 | F3 | F4
 
     void Awake()
     {
@@ -60,9 +52,9 @@ public class RTDButtonParser : MonoBehaviour, InterfaceRTDButtonParser
         _functionActionMap = new Dictionary<FunctionAction, (string, System.Action, System.Action)>
         {
             [FunctionAction.F1] = ("FUNCTION #1", () => Function1Pressed(), () => Function1Released()),
-            [FunctionAction.F2] = ("FUNCTION #2", () => Function2Pressed(), () => {}),
-            [FunctionAction.F3] = ("FUNCTION #3", () => Function3Pressed(), () => {}),
-            [FunctionAction.F4] = ("FUNCTION #4", () => Function4Pressed(), () => {})
+            [FunctionAction.F2] = ("FUNCTION #2", () => Function2Pressed(), () => Function2Released()),
+            [FunctionAction.F3] = ("FUNCTION #3", () => Function3Pressed(), () => Function3Released()),
+            [FunctionAction.F4] = ("FUNCTION #4", () => Function4Pressed(), () => Function4Released())
         };
     }
 
@@ -74,263 +66,76 @@ public class RTDButtonParser : MonoBehaviour, InterfaceRTDButtonParser
             return;
         }
 
-        byte keyCode = packet[6];
-        byte action = (keyCode == FUNC_CODE) ? packet[8] : packet[9];
-
-        if (keyCode == PAN_CODE)
+        byte group = packet[6];
+        if (group == PAN_CODE)
         {
-            ProcessPanningAction((PanningAction)action);
+            ProcessPanState(packet[9]);
         }
-        else if (keyCode == FUNC_CODE)
+        else if (group == FUNC_CODE)
         {
-            ProcessFunctionAction((FunctionAction)action);
+            ProcessFunctionState(packet[8]);
         }
         else
         {
-            Debug.LogWarning($"Unknown keyCode 0x{keyCode:X2}");
+            Debug.LogWarning($"Unknown keyCode 0x{group:X2}");
         }
     }
 
-    private void ProcessPanningAction(PanningAction action)
+    private void ProcessPanState(byte newState)
     {
-        if (action == PanningAction.Release)
+        if ((newState & ~PAN_BITS) != 0)
+            Debug.LogWarning($"[ButtonParser] Unknown pan state bits in 0x{newState:X2}; masking to known keys.");
+        newState &= PAN_BITS;
+
+        byte rising = (byte)(newState & ~_panState);
+        byte falling = (byte)(_panState & ~newState);
+        _panState = newState;
+
+        // Releases before presses, so sliding from one key to the other (0x04 -> 0x02)
+        // isn't a chord. Both keys down arrives as 0x06.
+        foreach (var key in PAN_KEYS)
         {
-            // Handle releases for all currently pressed pan buttons
-            var toRelease = new List<PanningAction>(_pressedPanButtons);
-            foreach (var pressed in toRelease)
+            if ((falling & (byte)key) != 0 && _panActionMap.TryGetValue(key, out var actionInfo))
             {
-                HandlePanRelease(pressed);
-            }
-            _pressedPanButtons.Clear();
-            _bothPanButtonsTriggered = false;
-        }
-        else if (!_pressedPanButtons.Contains(action))
-        {
-            // New button press
-            _pressedPanButtons.Add(action);
-
-            // Check if both pan buttons are now held simultaneously
-            if (_pressedPanButtons.Count == 2)
-            {
-                Debug.Log("BOTH PAN BUTTONS HELD - Toggle chunk mode");
-                _bothPanButtonsTriggered = true;
-                BothPanButtonsPressed();
-
-                // Cancel any delayed actions to prevent them from firing
-                CancelDelayedPanAction(PanningAction.Next);
-                CancelDelayedPanAction(PanningAction.Prev);
-
-                // Don't call HandlePanPress to avoid triggering individual actions
-                return;
-            }
-
-            HandlePanPress(action);
-        }
-    }
-
-    private void ProcessFunctionAction(FunctionAction action)
-    {
-        if (action == FunctionAction.Release)
-        {
-            // Handle releases for all currently pressed function buttons
-            var toRelease = new List<FunctionAction>(_pressedFunctionButtons);
-            foreach (var pressed in toRelease)
-            {
-                HandleFunctionRelease(pressed);
-            }
-            _pressedFunctionButtons.Clear();
-        }
-        else if (!_pressedFunctionButtons.Contains(action))
-        {
-            // New button press
-            _pressedFunctionButtons.Add(action);
-            HandleFunctionPress(action);
-        }
-    }
-
-    private void HandlePanPress(PanningAction panAction)
-    {
-
-        // Fire immediate event for timing purposes
-        if (panAction == PanningAction.Next)
-            PanNextPressedImmediate();
-        else if (panAction == PanningAction.Prev)
-            PanPrevPressedImmediate();
-
-        // Check for combinations first
-        if (_pressedFunctionButtons.Count > 0)
-        {
-            // Combination detected - cancel any delayed action
-            CancelDelayedPanAction(panAction);
-            _panButtonsInCombination.Add(panAction);
-
-            foreach (var funcAction in _pressedFunctionButtons)
-            {
-                _functionButtonsInCombination.Add(funcAction);
-                Debug.Log($"COMBINATION PRESS: {panAction} + {funcAction}");
-                CombinationPressed(panAction, funcAction);
-            }
-        }
-        else
-        {
-            // Cancel specific button's delayed action
-            CancelDelayedPanAction(panAction);
-            _delayedPanActions[panAction] = StartCoroutine(DelayedPanAction(panAction));
-        }
-    }
-
-    private void HandleFunctionPress(FunctionAction funcAction)
-    {
-        // Check for combinations first
-        if (_pressedPanButtons.Count > 0)
-        {
-            // Combination detected - cancel any delayed action
-            CancelDelayedFunctionAction(funcAction);
-            _functionButtonsInCombination.Add(funcAction);
-
-            foreach (var panAction in _pressedPanButtons)
-            {
-                // Also mark the pan button as part of a combination
-                _panButtonsInCombination.Add(panAction);
-                Debug.Log($"COMBINATION PRESS: {panAction} + {funcAction}");
-                CombinationPressed(panAction, funcAction);
-
-                if (funcAction == FunctionAction.F1)
-                    Function1Pressed();
-                if (funcAction == FunctionAction.F2)
-                    Function2Pressed();
-                if (funcAction == FunctionAction.F3)
-                    Function3Pressed();
-                if (funcAction == FunctionAction.F4)
-                    Function4Pressed();
-            }
-        }
-        else
-        {
-            // Cancel specific button's delayed action
-            CancelDelayedFunctionAction(funcAction);
-            _delayedFunctionActions[funcAction] = StartCoroutine(DelayedFunctionAction(funcAction));
-        }
-    }
-
-    private void HandlePanRelease(PanningAction panAction)
-    {
-        //Cancel delayed action on release
-        CancelDelayedPanAction(panAction);
-
-        // Skip individual release events if both pan buttons were triggered
-        if (_bothPanButtonsTriggered)
-            return;
-
-        // Check if this was part of a combination
-        if (_panButtonsInCombination.Contains(panAction))
-        {
-            // Release all combinations involving this button
-            foreach (var funcAction in _pressedFunctionButtons)
-            {
-                Debug.Log($"COMBINATION RELEASE: {panAction} + {funcAction}");
-                CombinationReleased(panAction, funcAction);
-            }
-
-            _panButtonsInCombination.Remove(panAction);
-            // Don't trigger individual release event
-        }
-        else
-        {
-            // Regular single button release
-            if (_panActionMap.TryGetValue(panAction, out var actionInfo))
-            {
-                Debug.Log($"RELEASED: {actionInfo.log}");
+                AppLog.Detail(LogArea.Buttons, $"RELEASED: {actionInfo.log}");
                 actionInfo.releaseAction();
             }
         }
+        foreach (var key in PAN_KEYS)
+        {
+            if ((rising & (byte)key) != 0 && _panActionMap.TryGetValue(key, out var actionInfo))
+            {
+                AppLog.Detail(LogArea.Buttons, $"PRESSED: {actionInfo.log}");
+                actionInfo.pressAction();
+            }
+        }
     }
 
-    private void HandleFunctionRelease(FunctionAction funcAction)
+    private void ProcessFunctionState(byte newState)
     {
-        // Cancel delayed action on release
-        CancelDelayedFunctionAction(funcAction);
+        if ((newState & ~FUNC_BITS) != 0)
+            Debug.LogWarning($"[ButtonParser] Unknown function state bits in 0x{newState:X2}; masking to known keys.");
+        newState &= FUNC_BITS;
 
-        // Check if this was part of a combination
-        if (_functionButtonsInCombination.Contains(funcAction))
-        {
-            // Release all combinations involving this button
-            foreach (var panAction in _pressedPanButtons)
-            {
-                Debug.Log($"COMBINATION RELEASE: {panAction} + {funcAction}");
-                CombinationReleased(panAction, funcAction);
-            }
+        byte rising = (byte)(newState & ~_funcState);
+        byte falling = (byte)(_funcState & ~newState);
+        _funcState = newState;
 
-            _functionButtonsInCombination.Remove(funcAction);
-            // Don't trigger individual release event
-        }
-        else
+        foreach (var key in FUNC_KEYS)
         {
-            // Regular single button release
-            if (_functionActionMap.TryGetValue(funcAction, out var actionInfo))
+            if ((falling & (byte)key) != 0 && _functionActionMap.TryGetValue(key, out var actionInfo))
             {
-                Debug.Log($"RELEASED: {actionInfo.log}");
+                AppLog.Detail(LogArea.Buttons, $"RELEASED: {actionInfo.log}");
                 actionInfo.releaseAction();
             }
         }
-    }
-
-    private IEnumerator DelayedPanAction(PanningAction panAction)
-    {
-        yield return new WaitForSeconds(COMBINATION_DELAY);
-
-        // If no function buttons were pressed during the delay, it's a single action
-        if (_pressedFunctionButtons.Count == 0 && !_panButtonsInCombination.Contains(panAction))
+        foreach (var key in FUNC_KEYS)
         {
-            if (_panActionMap.TryGetValue(panAction, out var actionInfo))
+            if ((rising & (byte)key) != 0 && _functionActionMap.TryGetValue(key, out var actionInfo))
             {
-                Debug.Log($"PRESSED: {actionInfo.log}");
+                AppLog.Detail(LogArea.Buttons, $"PRESSED: {actionInfo.log}");
                 actionInfo.pressAction();
             }
         }
-
-        // Clean up
-        if (_delayedPanActions.ContainsKey(panAction))
-            _delayedPanActions.Remove(panAction);
     }
-
-    private IEnumerator DelayedFunctionAction(FunctionAction funcAction)
-    {
-        yield return new WaitForSeconds(COMBINATION_DELAY);
-
-        // If no pan buttons were pressed during the delay, it's a single action
-        if (_pressedPanButtons.Count == 0 && !_functionButtonsInCombination.Contains(funcAction))
-        {
-            if (_functionActionMap.TryGetValue(funcAction, out var actionInfo))
-            {
-                Debug.Log($"PRESSED: {actionInfo.log}");
-                actionInfo.pressAction();
-            }
-        }
-
-        // Clean up
-        if (_delayedFunctionActions.ContainsKey(funcAction))
-            _delayedFunctionActions.Remove(funcAction);
-    }
-
-    private void CancelDelayedPanAction(PanningAction action)
-    {
-        if (_delayedPanActions.TryGetValue(action, out Coroutine coroutine))
-        {
-            if (coroutine != null)
-                StopCoroutine(coroutine);
-            _delayedPanActions.Remove(action);
-        }
-    }
-
-    private void CancelDelayedFunctionAction(FunctionAction action)
-    {
-        if (_delayedFunctionActions.TryGetValue(action, out Coroutine coroutine))
-        {
-            if (coroutine != null)
-                StopCoroutine(coroutine);
-            _delayedFunctionActions.Remove(action);
-        }
-    }
-
 }

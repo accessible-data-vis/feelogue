@@ -34,7 +34,7 @@ public class SpeechToText : MonoBehaviour, InterfaceSpeechToText
         pythonPath = EnvLoader.Get("PYTHON_PATH", "python3");
         scriptPath = Path.Combine(Application.dataPath, "StreamingAssets", "Tools", "google_cloud_speechtotext_v1.py");
 
-        UnityEngine.Debug.Log("Speech-to-Text System Ready");
+        AppLog.Detail(LogArea.Speech, "Speech-to-Text System Ready");
 
         if (UnityMainThreadDispatcher.Instance() == null)
         {
@@ -64,7 +64,7 @@ public class SpeechToText : MonoBehaviour, InterfaceSpeechToText
         onCompleteCallback = callback;
 
         // Default onComplete callback if not provided
-        onComplete ??= () => UnityEngine.Debug.Log("Speech-to-Text completed.");
+        onComplete ??= () => AppLog.Detail(LogArea.Speech, "Speech-to-Text completed.");
 
         speechThread = new Thread(() =>
         {
@@ -102,7 +102,7 @@ public class SpeechToText : MonoBehaviour, InterfaceSpeechToText
 
     private string RunPythonScript(bool quietMode, string touchData)
     {
-        UnityEngine.Debug.Log("Running Speech-to-Text Python script...");
+        AppLog.Detail(LogArea.Speech, "Running Speech-to-Text Python script...");
 
         string arguments = quietMode ? $"\"{scriptPath}\" --quiet" : $"\"{scriptPath}\"";
 
@@ -119,21 +119,30 @@ public class SpeechToText : MonoBehaviour, InterfaceSpeechToText
         try
         {
             process = new Process { StartInfo = psi };
+            // stderr is read asynchronously: reading both pipes in turn can deadlock
+            // when the child fills stderr.
+            var stderr = new System.Text.StringBuilder();
+            process.ErrorDataReceived += (s, e) => { if (e.Data != null) stderr.AppendLine(e.Data); };
             process.Start();
+            process.BeginErrorReadLine();
 
             string output = process.StandardOutput.ReadToEnd();
-            string error = process.StandardError.ReadToEnd();
-
             process.WaitForExit();
+            int exitCode = process.ExitCode;
 
             // Dispose process immediately after use
             process.Dispose();
             process = null;
 
-            // Handle errors...
+            // Output on stderr isn't a failure (pyaudio prints warnings there on macOS).
+            // Failure is a non-zero exit code or no transcript.
+            string error = stderr.ToString();
             if (!string.IsNullOrEmpty(error))
+                UnityEngine.Debug.LogWarning($"STT stderr (informational): {error}");
+
+            if (exitCode != 0)
             {
-                UnityEngine.Debug.LogWarning($"Python Error: {error}");
+                UnityEngine.Debug.LogWarning($"STT python exited with code {exitCode}");
                 return "cancelled transcript";
             }
 
@@ -177,7 +186,7 @@ public class SpeechToText : MonoBehaviour, InterfaceSpeechToText
             {
                 if (!process.HasExited)
                 {
-                    UnityEngine.Debug.Log($"Killing STT Python process (PID {process.Id})");
+                    AppLog.Detail(LogArea.Speech, $"Killing STT Python process (PID {process.Id})");
                     process.Kill();
                     process.WaitForExit();
                 }
@@ -242,7 +251,7 @@ public class SpeechToText : MonoBehaviour, InterfaceSpeechToText
             return;
         }
 
-        UnityEngine.Debug.Log("Cancelling STT (soft)—leaving mic live.");
+        AppLog.Detail(LogArea.Speech, "Cancelling STT (soft), leaving mic live.");
         StopCurrentRecognition();
         CleanupRecognition("cancelled transcript");
     }

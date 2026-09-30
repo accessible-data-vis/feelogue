@@ -6,21 +6,27 @@ public class MQTTManager : MonoBehaviour, InterfaceMQTTManager
     [Header("MQTT Clients")]
     [SerializeField] public MQTTReceiver localMQTT;   // assign in Inspector
     [SerializeField] public MQTTReceiver remoteMQTT;  // assign in Inspector
-    public static bool usingRemote { get; private set; } = true;
+    public static bool usingRemote { get; private set; } = false;
     public event Action<string, string> MessageReceived;
     public event Action MQTTConnected;  // Fired when MQTT successfully connects
 
     void Start()
     {
-        remoteMQTT.enabled = true;
-        localMQTT.enabled = false;
-        remoteMQTT.MessageReceived += OnMessageReceived;
-        remoteMQTT.Connected += OnMQTTConnected;
+        // Local broker (localhost:1883) by default; the GUI toggle switches to remote.
+        // Set here as well because statics survive domain reloads when those are off.
+        usingRemote = false;
+        remoteMQTT.enabled = false;
+        remoteMQTT.Disconnect();
+
+        localMQTT.enabled = true;
+        localMQTT.Connect();
+        localMQTT.MessageReceived += OnMessageReceived;
+        localMQTT.Connected += OnMQTTConnected;
     }
 
     private void OnMQTTConnected()
     {
-        Debug.Log($"MQTT Connected [{(usingRemote ? "REMOTE" : "LOCAL")}]");
+        AppLog.Info(LogArea.Setup, $"MQTT Connected [{(usingRemote ? "REMOTE" : "LOCAL")}]");
         MQTTConnected?.Invoke();
     }
 
@@ -39,7 +45,7 @@ public class MQTTManager : MonoBehaviour, InterfaceMQTTManager
             remoteMQTT.Connect();
             remoteMQTT.MessageReceived += OnMessageReceived;
             remoteMQTT.Connected += OnMQTTConnected;
-            Debug.Log(" Switched to REMOTE MQTT");
+            AppLog.Info(LogArea.Setup, "Switched to REMOTE MQTT");
         }
         else
         {
@@ -52,7 +58,7 @@ public class MQTTManager : MonoBehaviour, InterfaceMQTTManager
             localMQTT.Connect();
             localMQTT.MessageReceived += OnMessageReceived;
             localMQTT.Connected += OnMQTTConnected;
-            Debug.Log(" Switched to LOCAL MQTT");
+            AppLog.Info(LogArea.Setup, "Switched to LOCAL MQTT");
         }
     }
 
@@ -80,7 +86,7 @@ public class MQTTManager : MonoBehaviour, InterfaceMQTTManager
 
     public void OnMessageReceived(string topic, string payload)
     {
-        Debug.Log($"MQTT RECEIVED [{(usingRemote ? "REMOTE" : "LOCAL")}]: {topic} -> {payload}");
+        AppLog.Detail(LogArea.Agent, $"MQTT RECEIVED [{(usingRemote ? "REMOTE" : "LOCAL")}]: {topic} -> {payload}");
         // Only raise if the sender is the current active one
         if ((usingRemote && remoteMQTT.enabled) || (!usingRemote && localMQTT.enabled))
             MessageReceived?.Invoke(topic, payload);

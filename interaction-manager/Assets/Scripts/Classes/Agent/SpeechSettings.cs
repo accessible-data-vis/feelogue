@@ -9,7 +9,7 @@ public class SpeechSettings : ScriptableObject
     public string voiceName = "";
 
     [Tooltip("Language + gender (only used if mode = LanguageAndGender)")]
-    public string languageCode = "en-AU"; // Default: Australian English — change to match your target locale
+    public string languageCode = "en-AU"; // Default: Australian English; change to match your locale
     public VoiceGender voiceGender = VoiceGender.Female;
 
     [Header("Speech Speed")]

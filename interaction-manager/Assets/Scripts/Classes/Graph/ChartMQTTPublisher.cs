@@ -32,7 +32,7 @@ public static class ChartMQTTPublisher
             return;
         }
 
-        Debug.Log($"Publishing lightweight metadata for {availableCharts.Count} charts to agent...");
+        AppLog.Detail(LogArea.Agent, $"Publishing lightweight metadata for {availableCharts.Count} charts to agent...");
 
         // Build lightweight chart metadata array (NO schema or images)
         var chartMetadataList = new List<object>();
@@ -78,7 +78,7 @@ public static class ChartMQTTPublisher
             return;
         }
 
-        Debug.Log($"Publishing full details for chart {chartId}: {chart.DisplayName}");
+        AppLog.Detail(LogArea.Agent, $"Publishing full details for chart {chartId}: {chart.DisplayName}");
 
         var message = new
         {
@@ -98,10 +98,8 @@ public static class ChartMQTTPublisher
     }
 
     /// <summary>
-    /// Publish the current layer's data to the agent via MQTT.
-    /// Called after applying a layer so the agent has the same data being displayed on the RTD.
-    /// Sends layer-specific field names so agent knows which fields to use.
-    /// Supports single-series, multi-series (color field), and layered (semantic zoom) charts.
+    /// Publish the displayed chart's data to the agent, with its field names, after
+    /// every render. Handles single- and multi-series (color field) charts.
     /// </summary>
     public static void PublishCurrentLayerData(
         InterfaceMQTTManager mqttManager,
@@ -134,7 +132,7 @@ public static class ChartMQTTPublisher
             ? xField.Substring(0, xField.Length - "_rtd_index".Length)
             : xField;
 
-        Debug.Log($"Publishing layer '{layerName}' data to agent ({currentVegaSpec.Data.Values.Count} rows, x='{baseXField}', y='{yField}', series='{colorField ?? "none"}')...");
+        AppLog.Detail(LogArea.Agent, $"Publishing layer '{layerName}' data to agent ({currentVegaSpec.Data.Values.Count} rows, x='{baseXField}', y='{yField}', series='{colorField ?? "none"}')...");
 
         List<Dictionary<string, object>> filteredData;
 
@@ -185,7 +183,9 @@ public static class ChartMQTTPublisher
                     catch { isInYWindow = true; }
                 }
                 bool isHiddenSeries = hiddenSeries != null && row.ContainsKey(colorField) && hiddenSeries.Contains(row[colorField]?.ToString() ?? "");
-                filtered["visible"] = !isHiddenSeries && isInXWindow && isInYWindow;
+                filtered["in_view"] = !isHiddenSeries && isInXWindow && isInYWindow;
+                if (row.TryGetValue(VegaChartLoader.RowIdField, out var rowId))
+                    filtered[VegaChartLoader.RowIdField] = rowId;
 
                 return filtered;
             }).ToList();
@@ -213,13 +213,15 @@ public static class ChartMQTTPublisher
                     }
                     catch { isInYWindow = true; }
                 }
-                filtered["visible"] = isInXWindow && isInYWindow;
+                filtered["in_view"] = isInXWindow && isInYWindow;
+                if (row.TryGetValue(VegaChartLoader.RowIdField, out var rowId))
+                    filtered[VegaChartLoader.RowIdField] = rowId;
 
                 return filtered;
             }).ToList();
         }
 
-        // Build message — include series_field and chart_type when applicable
+        // Build message, with series_field and chart_type when applicable
         var messageDict = new Dictionary<string, object>
         {
             { "message_type", "layer_data_update" },
@@ -244,7 +246,7 @@ public static class ChartMQTTPublisher
     /// Publish chart data to MQTT for display in agent UI.
     /// Sends chart metadata + Vega-Lite spec + base64-encoded PNG image.
     /// </summary>
-    public static void PublishChartToMQTT(InterfaceMQTTManager mqttManager, DiscoveredChart chart)
+    public static void PublishChartToMQTT(InterfaceMQTTManager mqttManager, DiscoveredChart chart, object renderedInfo = null)
     {
         if (chart == null)
             return;
@@ -275,6 +277,7 @@ public static class ChartMQTTPublisher
                 chart_type = chart.chartType,
                 data_name = chart.dataName,
                 schema = vegaJson != null ? JToken.Parse(vegaJson) : null,
+                rendered = renderedInfo,   // symbols and Y axis as actually drawn
                 image_data = base64Image,
                 image_format = base64Image != null ? "png" : null
                 }
@@ -283,7 +286,7 @@ public static class ChartMQTTPublisher
             // Serialize with indentation for readability
             string json = JsonConvert.SerializeObject(chartData, Formatting.Indented);
 
-            Debug.Log($"Publishing chart data via MQTT: {chart.DisplayName} (Vega: {vegaJson != null}, PNG: {base64Image != null})");
+            AppLog.Detail(LogArea.Agent, $"Publishing chart data via MQTT: {chart.DisplayName} (Vega: {vegaJson != null}, PNG: {base64Image != null})");
             mqttManager.PublishChart(json);
         }
         catch (Exception ex)
@@ -319,7 +322,7 @@ public static class ChartMQTTPublisher
         try
         {
             mqttManager.PublishChart(json);
-            Debug.Log($"{successLabel} ({json.Length} bytes)");
+            AppLog.Detail(LogArea.Agent, $"{successLabel} ({json.Length} bytes)");
         }
         catch (Exception ex)
         {

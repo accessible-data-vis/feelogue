@@ -1,502 +1,78 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
   "description": "Interest Rate - Line Chart",
-  "zoom": {
-    "method": "aggregate",
-    "aggregateOp": "mean"
-  },
   "width": 487,
   "height": 364,
   "data": {
-    "name": "source",
     "values": [
       {
-        "month": "2019-01-01",
-        "interest rate (%)": 1.5
+        "year": 2019,
+        "interest rate (%)": 1.17
       },
       {
-        "month": "2019-02-01",
-        "interest rate (%)": 1.5
+        "year": 2020,
+        "interest rate (%)": 0.33
       },
       {
-        "month": "2019-03-01",
-        "interest rate (%)": 1.5
+        "year": 2021,
+        "interest rate (%)": 0.13
       },
       {
-        "month": "2019-04-01",
-        "interest rate (%)": 1.5
+        "year": 2022,
+        "interest rate (%)": 1.31
       },
       {
-        "month": "2019-05-01",
-        "interest rate (%)": 1.5
+        "year": 2023,
+        "interest rate (%)": 3.91
       },
       {
-        "month": "2019-06-01",
-        "interest rate (%)": 1.25
-      },
-      {
-        "month": "2019-07-01",
-        "interest rate (%)": 1
-      },
-      {
-        "month": "2019-08-01",
-        "interest rate (%)": 1
-      },
-      {
-        "month": "2019-09-01",
-        "interest rate (%)": 1
-      },
-      {
-        "month": "2019-10-01",
-        "interest rate (%)": 0.75
-      },
-      {
-        "month": "2019-11-01",
-        "interest rate (%)": 0.75
-      },
-      {
-        "month": "2019-12-01",
-        "interest rate (%)": 0.75
-      },
-      {
-        "month": "2020-01-01",
-        "interest rate (%)": 0.75
-      },
-      {
-        "month": "2020-02-01",
-        "interest rate (%)": 0.75
-      },
-      {
-        "month": "2020-03-01",
-        "interest rate (%)": 0.5
-      },
-      {
-        "month": "2020-04-01",
-        "interest rate (%)": 0.25
-      },
-      {
-        "month": "2020-05-01",
-        "interest rate (%)": 0.25
-      },
-      {
-        "month": "2020-06-01",
-        "interest rate (%)": 0.25
-      },
-      {
-        "month": "2020-07-01",
-        "interest rate (%)": 0.25
-      },
-      {
-        "month": "2020-08-01",
-        "interest rate (%)": 0.25
-      },
-      {
-        "month": "2020-09-01",
-        "interest rate (%)": 0.25
-      },
-      {
-        "month": "2020-10-01",
-        "interest rate (%)": 0.25
-      },
-      {
-        "month": "2020-11-01",
-        "interest rate (%)": 0.1
-      },
-      {
-        "month": "2020-12-01",
-        "interest rate (%)": 0.1
-      },
-      {
-        "month": "2021-01-01",
-        "interest rate (%)": 0.1
-      },
-      {
-        "month": "2021-02-01",
-        "interest rate (%)": 0.1
-      },
-      {
-        "month": "2021-03-01",
-        "interest rate (%)": 0.1
-      },
-      {
-        "month": "2021-04-01",
-        "interest rate (%)": 0.1
-      },
-      {
-        "month": "2021-05-01",
-        "interest rate (%)": 0.25
-      },
-      {
-        "month": "2021-06-01",
-        "interest rate (%)": 0.1
-      },
-      {
-        "month": "2021-07-01",
-        "interest rate (%)": 0.1
-      },
-      {
-        "month": "2021-08-01",
-        "interest rate (%)": 0.1
-      },
-      {
-        "month": "2021-09-01",
-        "interest rate (%)": 0.1
-      },
-      {
-        "month": "2021-10-01",
-        "interest rate (%)": 0.1
-      },
-      {
-        "month": "2021-11-01",
-        "interest rate (%)": 0.1
-      },
-      {
-        "month": "2021-12-01",
-        "interest rate (%)": 0.25
-      },
-      {
-        "month": "2022-01-01",
-        "interest rate (%)": 0.1
-      },
-      {
-        "month": "2022-02-01",
-        "interest rate (%)": 0.1
-      },
-      {
-        "month": "2022-03-01",
-        "interest rate (%)": 0.1
-      },
-      {
-        "month": "2022-04-01",
-        "interest rate (%)": 0.1
-      },
-      {
-        "month": "2022-05-01",
-        "interest rate (%)": 0.35
-      },
-      {
-        "month": "2022-06-01",
-        "interest rate (%)": 0.85
-      },
-      {
-        "month": "2022-07-01",
-        "interest rate (%)": 1.35
-      },
-      {
-        "month": "2022-08-01",
-        "interest rate (%)": 1.85
-      },
-      {
-        "month": "2022-09-01",
-        "interest rate (%)": 2.35
-      },
-      {
-        "month": "2022-10-01",
-        "interest rate (%)": 2.6
-      },
-      {
-        "month": "2022-11-01",
-        "interest rate (%)": 2.85
-      },
-      {
-        "month": "2022-12-01",
-        "interest rate (%)": 3.1
-      },
-      {
-        "month": "2023-01-01",
-        "interest rate (%)": 3.1
-      },
-      {
-        "month": "2023-02-01",
-        "interest rate (%)": 3.35
-      },
-      {
-        "month": "2023-03-01",
-        "interest rate (%)": 3.6
-      },
-      {
-        "month": "2023-04-01",
-        "interest rate (%)": 3.6
-      },
-      {
-        "month": "2023-05-01",
-        "interest rate (%)": 3.85
-      },
-      {
-        "month": "2023-06-01",
-        "interest rate (%)": 4.1
-      },
-      {
-        "month": "2023-07-01",
-        "interest rate (%)": 4.1
-      },
-      {
-        "month": "2023-08-01",
-        "interest rate (%)": 4.1
-      },
-      {
-        "month": "2023-09-01",
+        "year": 2024,
         "interest rate (%)": 4.35
       },
       {
-        "month": "2023-10-01",
-        "interest rate (%)": 4.1
-      },
-      {
-        "month": "2023-11-01",
-        "interest rate (%)": 4.35
-      },
-      {
-        "month": "2023-12-01",
-        "interest rate (%)": 4.35
-      },
-      {
-        "month": "2024-01-01",
-        "interest rate (%)": 4.35
-      },
-      {
-        "month": "2024-02-01",
-        "interest rate (%)": 4.35
-      },
-      {
-        "month": "2024-03-01",
-        "interest rate (%)": 4.35
-      },
-      {
-        "month": "2024-04-01",
-        "interest rate (%)": 4.35
-      },
-      {
-        "month": "2024-05-01",
-        "interest rate (%)": 4.35
-      },
-      {
-        "month": "2024-06-01",
-        "interest rate (%)": 4.35
-      },
-      {
-        "month": "2024-07-01",
-        "interest rate (%)": 4.35
-      },
-      {
-        "month": "2024-08-01",
-        "interest rate (%)": 4.35
-      },
-      {
-        "month": "2024-09-01",
-        "interest rate (%)": 4.35
-      },
-      {
-        "month": "2024-10-01",
-        "interest rate (%)": 4.35
-      },
-      {
-        "month": "2024-11-01",
-        "interest rate (%)": 4.35
-      },
-      {
-        "month": "2024-12-01",
-        "interest rate (%)": 4.35
-      },
-      {
-        "month": "2025-01-01",
-        "interest rate (%)": 4.35
-      },
-      {
-        "month": "2025-02-01",
-        "interest rate (%)": 4.1
-      },
-      {
-        "month": "2025-03-01",
-        "interest rate (%)": 4.35
-      },
-      {
-        "month": "2025-04-01",
-        "interest rate (%)": 4.1
-      },
-      {
-        "month": "2025-05-01",
-        "interest rate (%)": 3.85
-      },
-      {
-        "month": "2025-06-01",
-        "interest rate (%)": 3.85
-      },
-      {
-        "month": "2025-07-01",
-        "interest rate (%)": 3.85
-      },
-      {
-        "month": "2025-08-01",
-        "interest rate (%)": 3.6
-      },
-      {
-        "month": "2025-09-01",
-        "interest rate (%)": 3.6
-      },
-      {
-        "month": "2025-10-01",
-        "interest rate (%)": 3.6
-      },
-      {
-        "month": "2025-11-01",
-        "interest rate (%)": 3.6
+        "year": 2025,
+        "interest rate (%)": 3.9
       }
     ]
   },
-  "layer": [
-    {
-      "name": "yearly",
-      "description": "Yearly averages - shown when zoomed out",
-      "transform": [
-        {
-          "timeUnit": "year",
-          "field": "month",
-          "as": "year"
-        },
-        {
-          "aggregate": [
-            {
-              "op": "mean",
-              "field": "interest rate (%)",
-              "as": "interest rate (%)"
-            }
-          ],
-          "groupby": [
-            "year"
-          ]
-        }
-      ],
-      "mark": {
-        "type": "line",
-        "tooltip": true,
-        "point": {
-          "filled": true,
-          "size": 150
-        }
-      },
-      "encoding": {
-        "x": {
-          "field": "year",
-          "type": "temporal",
-          "title": "Year"
-        },
-        "y": {
-          "field": "interest rate (%)",
-          "type": "quantitative",
-          "title": "Interest Rate (%)",
-          "scale": {
-            "domain": [
-              0,
-              5
-            ]
-          }
-        },
-        "color": {
-          "value": "blue"
-        },
-        "opacity": {
-          "value": 1
-        }
-      }
-    },
-    {
-      "name": "quarterly",
-      "description": "Quarterly averages - shown at medium zoom",
-      "transform": [
-        {
-          "timeUnit": "yearquarter",
-          "field": "month",
-          "as": "quarter"
-        },
-        {
-          "aggregate": [
-            {
-              "op": "mean",
-              "field": "interest rate (%)",
-              "as": "interest rate (%)"
-            }
-          ],
-          "groupby": [
-            "quarter"
-          ]
-        }
-      ],
-      "mark": {
-        "type": "line",
-        "tooltip": true,
-        "point": {
-          "filled": true,
-          "size": 120
-        }
-      },
-      "encoding": {
-        "x": {
-          "field": "quarter",
-          "type": "temporal",
-          "title": "Quarter"
-        },
-        "y": {
-          "field": "interest rate (%)",
-          "type": "quantitative",
-          "title": "Interest Rate (%)",
-          "scale": {
-            "domain": [
-              0,
-              5
-            ]
-          }
-        },
-        "color": {
-          "value": "green"
-        },
-        "opacity": {
-          "value": 1
-        }
-      }
-    },
-    {
-      "name": "monthly",
-      "description": "Monthly rates - shown when zoomed in",
-      "mark": {
-        "type": "line",
-        "tooltip": true,
-        "point": {
-          "filled": true,
-          "size": 100
-        }
-      },
-      "encoding": {
-        "x": {
-          "field": "month",
-          "type": "temporal",
-          "title": "Month"
-        },
-        "y": {
-          "field": "interest rate (%)",
-          "type": "quantitative",
-          "title": "Interest Rate (%)",
-          "scale": {
-            "domain": [
-              0,
-              5
-            ]
-          }
-        },
-        "color": {
-          "value": "red"
-        },
-        "opacity": {
-          "value": 1
-        }
-      }
+  "mark": {
+    "type": "line",
+    "tooltip": true,
+    "point": {
+      "filled": true,
+      "size": 150
     }
-  ],
+  },
+  "encoding": {
+    "x": {
+      "field": "year",
+      "type": "ordinal",
+      "title": "Year"
+    },
+    "y": {
+      "field": "interest rate (%)",
+      "type": "quantitative",
+      "title": "Interest Rate (%)",
+      "scale": {
+        "domain": [
+          0,
+          5
+        ]
+      }
+    },
+    "color": {
+      "value": "blue"
+    },
+    "opacity": {
+      "value": 1
+    }
+  },
   "overview": {
     "title": "Australian interest rate, line chart, 2019 to 2025.",
-    "x_axis": "The X axis shows time from January 2019 to November 2025, by month.",
+    "x_axis": "The X axis shows time by year, from 2019 to 2025. Each point is that year's average rate; 2025 averages January to November.",
     "y_axis": "The Y axis shows the interest rate as a percentage, from 0 to 5 percent.",
-    "summary": "The rate fell from 1.5 percent to 0.1 percent during COVID, held near zero for two years, then rose sharply from mid-2022 to peak at 4.35 percent in late 2023. It began easing in early 2025."
+    "data": "The line shows the yearly average rate: 1.17 percent in 2019, falling to 0.13 percent in 2021, then climbing to 4.35 percent in 2024 before easing to 3.9 percent in 2025.",
+    "summary": "Yearly averages fell from 1.17 percent in 2019 to 0.13 percent in 2021, rose sharply to 3.91 percent in 2023, peaked at 4.35 percent in 2024, and eased to 3.9 percent in 2025."
   },
   "config": {
     "background": "white",

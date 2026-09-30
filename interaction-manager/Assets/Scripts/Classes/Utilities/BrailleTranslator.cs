@@ -137,8 +137,8 @@ public static class BrailleTranslator
         ['p'] = 0x0F, ['q'] = 0x1F, ['r'] = 0x17, ['s'] = 0x0E, ['t'] = 0x1E,
         ['u'] = 0x25, ['v'] = 0x27, ['w'] = 0x3A, ['x'] = 0x2D, ['y'] = 0x3D, ['z'] = 0x35,
         // indicators and punctuation (from display table)
-        ['#'] = 0x3C, // dots 3-4-5-6  — number indicator
-        [','] = 0x20, // dot 6         — capital indicator (single letter)
+        ['#'] = 0x3C, // dots 3-4-5-6: number indicator
+        [','] = 0x20, // dot 6: capital indicator (single letter)
         ['.'] = 0x28, // dots 4-6
         ['-'] = 0x24, // dots 3-6
         ['\'']= 0x04, // dot 3
@@ -405,7 +405,7 @@ public static class BrailleTranslator
             pages.Add(PadAndHex(new List<byte>(), cellsPerPage));
 
         string unicode = new string(allBytes.Select(b => (char)(0x2800 + b)).ToArray());
-        UnityEngine.Debug.Log($"[Braille] {text}\n  BRF:     {brf}\n  Unicode: {unicode}");
+        AppLog.Detail(LogArea.Braille, $"{text}\n  BRF:     {brf}\n  Unicode: {unicode}");
 
         return pages;
     }

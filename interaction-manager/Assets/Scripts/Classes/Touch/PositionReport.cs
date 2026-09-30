@@ -85,7 +85,7 @@ public class PositionReport : MonoBehaviour
         if (leapServiceProvider == null)
             UnityEngine.Debug.LogError($"{name} could not find LeapServiceProvider!");
 
-        UnityEngine.Debug.Log($"{gameObject.name} PositionReportNew is active!");
+        AppLog.Detail(LogArea.Touch, $"{gameObject.name} PositionReportNew is active!");
     }
 
     void Update()
@@ -111,7 +111,7 @@ public class PositionReport : MonoBehaviour
                 
                 if (Time.frameCount % 120 == 0) // Log every 2 seconds
                 {
-                    UnityEngine.Debug.LogWarning($"[{name}] Wrong chirality: Expected {(name.Contains("Left") ? "LEFT" : "RIGHT")}, " +
+                    AppLog.Detail(LogArea.Touch, $"[{name}] Wrong chirality: Expected {(name.Contains("Left") ? "LEFT" : "RIGHT")}, " +
                                 $"got {(leapHand.IsLeft ? "LEFT" : "RIGHT")} (confidence: {leapHand.Confidence:F2})");
                 }
                 
@@ -205,8 +205,6 @@ public class PositionReport : MonoBehaviour
                     Cooldown = _buttonGUI.GetTapCoolDown(),
                     DoubleTapWindow = _buttonGUI.GetDoubleTapTimeWindow()
                 });
-                _gestureClassifier.ClearMotion();
-                _collisionTracker.ClearCoordinates();
                 return;
             }
 
@@ -217,7 +215,7 @@ public class PositionReport : MonoBehaviour
                 if (leapHand != null)
                 {
                     float downSpeed = -leapHand.PalmVelocity.y / 1000f;
-                    UnityEngine.Debug.Log($"[TapVelocity] {this.name}, Palm downSpeed={downSpeed:F3} m/s, PalmVelocity={leapHand.PalmVelocity}");
+                    AppLog.Detail(LogArea.Touch, $"[TapVelocity] {this.name}, Palm downSpeed={downSpeed:F3} m/s, PalmVelocity={leapHand.PalmVelocity}");
                 }
             }
 
@@ -226,11 +224,12 @@ public class PositionReport : MonoBehaviour
 
             float touchStartTime = _collisionTracker.GetTouchStartTime();
             ProcessTouchIfNeeded(coords, touchStartTime > 0f ? touchStartTime : enterTime);
-            _gestureClassifier.ClearMotion();
-            _collisionTracker.ClearCoordinates();
         }
         finally
         {
+            // Every exit clears both the coords (Reset) and the classifier's motion,
+            // or a swipe would stay latched and block the next tap.
+            _gestureClassifier.ClearMotion();
             _collisionTracker.Reset();
         }
     }
@@ -243,7 +242,7 @@ public class PositionReport : MonoBehaviour
         float now = Time.time;
         float duration = now - enterTime;
 
-        //  CALIBRATION MODE: Bypass all validation
+        // Calibration mode: bypass all validation
         if (bypassValidationForCalibration)
         {
             if (coords.Count > 0)
@@ -288,7 +287,7 @@ public class PositionReport : MonoBehaviour
         // Double-tap mode
         if (_buttonGUI.GetDoubleTapState())
         {
-            // Note: We need to process touch data first to get interpretedTapPoint and currentNodeIDs
+            // Process the touch data first to get interpretedTapPoint and currentNodeIDs
             // So we'll just process the tap and log it
             TouchDebugger.LogReport(new TouchDebugger.TapDebugInfo
             {
@@ -396,7 +395,7 @@ public class PositionReport : MonoBehaviour
             }
             else if (isFirstTap)
             {
-                UnityEngine.Debug.Log($"First tap detected, waiting for second tap...");
+                AppLog.Detail(LogArea.Touch, $"First tap detected, waiting for second tap...");
             }
         }
     }

@@ -11,8 +11,13 @@ Example:
 """
 
 import argparse
+import json
 import sys
 import os
+
+sys.dont_write_bytecode = True   # no __pycache__ inside StreamingAssets (it ships with builds)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from chart_preview_stamp import spec_digest, stamp_png  # noqa: E402
 
 try:
     import vl_convert as vlc
@@ -49,6 +54,8 @@ def generate_preview(json_path, png_path, scale_factor=2):
         # Convert Vega-Lite spec to PNG
         # scale_factor controls output resolution (2 = 2x native resolution)
         png_data = vlc.vegalite_to_png(spec, scale=scale_factor)
+        # Stamp the spec digest for tests/test_chart_previews.py
+        png_data = stamp_png(png_data, spec_digest(json.loads(spec)))
 
         # Ensure output directory exists
         output_dir = os.path.dirname(png_path)
@@ -70,6 +77,7 @@ def generate_preview(json_path, png_path, scale_factor=2):
 
 
 def main():
+    """Command-line entry: draw one spec's preview (also run by Unity's RTDPreviewGenerator)."""
     parser = argparse.ArgumentParser(
         description="Generate PNG preview from Vega-Lite JSON specification"
     )

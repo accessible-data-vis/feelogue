@@ -28,6 +28,7 @@ using uPLibrary.Networking.M2Mqtt;
 using uPLibrary.Networking.M2Mqtt.Messages;
 using M2MqttUnity;
 
+/// <summary>MQTT client for one broker (local or remote): receives agent replies and publishes interactions and chart data.</summary>
 public class MQTTReceiver : M2MqttUnityClient
 {
     [SerializeField] private MonoBehaviour rtdUpdaterService;
@@ -106,18 +107,18 @@ public class MQTTReceiver : M2MqttUnityClient
 
     protected override void OnConnectionFailed(string errorMessage)
     {
-        Debug.Log("CONNECTION FAILED! " + errorMessage);
+        AppLog.Info(LogArea.Setup, "CONNECTION FAILED! " + errorMessage);
     }
 
     protected override void OnDisconnected()
     {
-        Debug.Log("Disconnected.");
+        AppLog.Info(LogArea.Setup, "Disconnected.");
         isConnected = false;
     }
 
     protected override void OnConnectionLost()
     {
-        Debug.Log("CONNECTION LOST!");
+        AppLog.Info(LogArea.Setup, "CONNECTION LOST!");
     }
 
     protected override void SubscribeTopics()

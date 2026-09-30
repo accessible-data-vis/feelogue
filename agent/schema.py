@@ -41,12 +41,11 @@ INTENT_SCHEMA={
             "type": "string",
             "enum": [
               "load_chart",
-              "image_analysis",
               "chart_overview",
               "touch_interaction",
               "data_analysis",
               "trend",
-              "operations",
+              "filter",
               "general_question"
             ],
             "description": "The classified intent type"
@@ -70,3 +69,54 @@ INTENT_SCHEMA={
   "additionalProperties": False
 }
 
+
+# Data-query answers carry the `_id`s of the rows they're anchored to, chosen in
+# the same call that writes the spoken answer. Unity stamps an `_id` on every row.
+DATA_QUERY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "message": {
+            "type": "string",
+            "description": "The spoken answer to the user's question (concise, TTS-friendly, no markdown).",
+        },
+        "highlighted_ids": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": (
+                "The `_id` of each row this answer is anchored to (e.g. the row behind a "
+                "max/min/specific-date answer), copied verbatim from a csv_query_tool result "
+                "- never invented. Empty when the answer is not tied to specific rows "
+                "(e.g. an aggregate or general statement)."
+            ),
+        },
+    },
+    "required": ["message", "highlighted_ids"],
+    "additionalProperties": False,
+}
+
+
+# Maps already-resolved highlight nodes (by id) to the spoken chunk that
+# references each one; drives when each point blinks.
+CHUNK_ASSIGNMENT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "assignments": {
+            "type": "array",
+            "description": "One entry per data point id; several ids may share a chunk.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "The data point's id, copied exactly."},
+                    "chunk": {
+                        "type": ["integer", "null"],
+                        "description": "Index of the sentence that references this point, or null.",
+                    },
+                },
+                "required": ["id", "chunk"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["assignments"],
+    "additionalProperties": False,
+}

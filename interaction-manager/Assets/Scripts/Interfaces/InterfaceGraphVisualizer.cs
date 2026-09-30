@@ -11,8 +11,8 @@ public interface InterfaceGraphVisualizer
     public List<NodeComponent> GetMatchingNodesBasedOnValue(List<float> searchValues, bool requireAll = true);
     Dictionary<string, GameObject> GetNodes();
     HashSet<Vector2Int> GetAxisCoordinates();
-    void UpdateVisibleNodes(List<Dictionary<string, object>> visibleData, string xField, string yField, float? axisDomainYMin = null, float? axisDomainYMax = null, List<object> xViewportValues = null);
+    void UpdateVisibleNodes(List<Dictionary<string, object>> visibleData, string xField, string yField, float? axisDomainYMin = null, float? axisDomainYMax = null, List<object> xWindowValues = null);
     void ShowAllNodes();
-    void UpdateViewportOverlay(int windowStart, int windowSize, int totalDataPoints, float windowYMin, float windowYMax, float dataYMin, float dataYMax);
+    void UpdateWindowOverlay(int windowStart, int windowSize, int totalDataPoints, float windowYMin, float windowYMax, float dataYMin, float dataYMax);
     NodeComponent GetMatchingNodeByXY(string xValue, float yValue);
 }

@@ -20,9 +20,6 @@ public class VegaSpec
     [JsonProperty("mark")]
     public JToken Mark { get; set; }  // Can be string or object
 
-    [JsonProperty("layer")]
-    public List<VegaLayer> Layer { get; set; }
-
     [JsonProperty("transform")]
     public List<JToken> Transform { get; set; }
 
@@ -102,6 +99,26 @@ public class VegaEncoding
 
     [JsonProperty("opacity")]
     public JToken Opacity { get; set; }  // Can be {"value": 1} or complex conditional
+
+    [JsonProperty("shape")]
+    public JToken Shape { get; set; }  // {"field", "scale": {"domain": [...], "range": [...]}}
+
+    /// <summary>
+    /// Series name -> Vega-Lite shape name, from shape.scale.domain/range when the shape
+    /// channel encodes the given (series) field. Empty when the spec declares none.
+    /// </summary>
+    public Dictionary<string, string> GetShapeMap(string seriesField)
+    {
+        var map = new Dictionary<string, string>();
+        if (Shape == null || Shape.Type != JTokenType.Object || seriesField == null) return map;
+        if (Shape["field"]?.ToString() != seriesField) return map;
+        var domain = Shape["scale"]?["domain"] as JArray;
+        var range = Shape["scale"]?["range"] as JArray;
+        if (domain == null || range == null) return map;
+        for (int i = 0; i < Math.Min(domain.Count, range.Count); i++)
+            map[domain[i].ToString()] = range[i].ToString();
+        return map;
+    }
 
     public string GetColorField()
     {
@@ -185,38 +202,6 @@ public class VegaAxis
 
         return Values.ToObject<float[]>();
     }
-}
-
-[Serializable]
-public class VegaLayer
-{
-    [JsonProperty("name")]
-    public string Name { get; set; }  // Layer identifier (e.g., "yearly", "quarterly")
-
-    [JsonProperty("data")]
-    public VegaLayerData Data { get; set; }
-
-    [JsonProperty("mark")]
-    public JToken Mark { get; set; }
-
-    [JsonProperty("encoding")]
-    public VegaEncoding Encoding { get; set; }
-
-    [JsonProperty("transform")]
-    public List<JToken> Transform { get; set; }
-}
-
-[Serializable]
-public class VegaLayerData
-{
-    [JsonProperty("url")]
-    public string Url { get; set; }
-
-    [JsonProperty("format")]
-    public VegaDataFormat Format { get; set; }
-
-    [JsonProperty("values")]
-    public List<Dictionary<string, object>> Values { get; set; }
 }
 
 [Serializable]

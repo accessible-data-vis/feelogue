@@ -118,7 +118,7 @@ public static class RTDMarkHighlighter
             node = FindSymbolNode(x, y, graphVisualizer, radius: 2);
 
         if (node != null)
-            Debug.Log($"[GetSymbolNeighbours] ({x},{y}): id='{node.id}', symbol='{node.symbol ?? "null"}'");
+            AppLog.Detail(LogArea.Render, $"[GetSymbolNeighbours] ({x},{y}): id='{node.id}', symbol='{node.symbol ?? "null"}'");
 
         if (node == null || string.IsNullOrEmpty(node.symbol))
             return null;
@@ -234,7 +234,7 @@ public static class RTDMarkHighlighter
         var bounds = GetBounds(barCoords);
         bool isThick = IsThickBar(bounds);
 
-        Debug.Log($"[MarkHighlight] Bar at ({x},{y}): isThick={isThick}, cols={bounds.minCol}-{bounds.maxCol}, rows={bounds.minRow}-{bounds.maxRow}");
+        AppLog.Detail(LogArea.Render, $"[MarkHighlight] Bar at ({x},{y}): isThick={isThick}, cols={bounds.minCol}-{bounds.maxCol}, rows={bounds.minRow}-{bounds.maxRow}");
 
         if (isThick)
         {

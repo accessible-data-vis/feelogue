@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
+/// <summary>Detaches a fingertip collider from the hand so FingerSnapper can position it.</summary>
 public class FingerAligner : MonoBehaviour
 {
     void Start()
@@ -10,6 +11,6 @@ public class FingerAligner : MonoBehaviour
         // (FingerSnapper will handle positioning)
         transform.SetParent(null, false);
         
-        Debug.Log($"{name} detached from parent hand");
+        AppLog.Detail(LogArea.Device, $"{name} detached from parent hand");
     }
 }

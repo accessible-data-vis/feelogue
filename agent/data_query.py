@@ -14,12 +14,11 @@ from .utils import format_messages_to_str
 from .config import OPENAI_MODEL_ANALYSIS
 from .prompts import get_data_query_prefix
 
-# LLM for CSV/data queries - temperature=0 for reliable tool-call compliance
+# LLM for CSV/data queries; temperature=0 for reliable tool-call compliance
 csv_llm = ChatOpenAI(model=OPENAI_MODEL_ANALYSIS, temperature=0, stop=None)
 
-# Cache for the pandas agent executor -- rebuilt only when dataset or columns change.
-# A fresh pd.DataFrame is constructed on every layer_data_update (context.py),
-# so id(df) alone already changes whenever the dataset changes.
+# Cache for the pandas agent executor, rebuilt only when the dataset or columns change.
+# Every layer_data_update builds a new DataFrame, so id(df) changes with the data.
 _cached_executor = None
 _cached_df_id = None
 _cached_columns = None
@@ -103,8 +102,8 @@ def csv_query_tool(
     """
     print("CSV Tool Query: \n", query)
     try:
-        from .context import get_df
-        df = get_df()
+        from .context import frame_for_questions
+        df = frame_for_questions(state)
         if df is None or df.empty:
             return (
                 "I don't have any chart data loaded right now. "
@@ -124,10 +123,22 @@ def csv_query_tool(
         elif chart_type == "scatter" and second_column and second_column in df.columns:
             columns_to_use = [x_field, y_field, second_column]
         else:
-            columns_to_use = list(df.columns)
+            columns_to_use = [c for c in df.columns if c != "_id"]
 
-        if "visible" in df.columns and not df["visible"].all() and "visible" not in columns_to_use:
-            columns_to_use.append("visible")
+        # Row ids travel with every query so an answer can name the rows it is
+        # anchored to (highlighted_ids); the spoken answer never mentions them.
+        if "_id" in df.columns and "_id" not in columns_to_use:
+            columns_to_use.append("_id")
+
+        if "in_view" in df.columns and not df["in_view"].all() and "in_view" not in columns_to_use:
+            columns_to_use.append("in_view")
+        if "hidden_by_filter" in df.columns and "hidden_by_filter" not in columns_to_use:
+            columns_to_use.append("hidden_by_filter")
+
+        # Include each selected column's parsed-datetime shadow companion, if any.
+        from .date_cast import shadow_col_name
+        columns_to_use += [c for c in (shadow_col_name(x) for x in columns_to_use)
+                           if c in df.columns and c not in columns_to_use]
 
         selected_data = df[columns_to_use]
         executor = _get_executor(df, selected_data, columns_to_use, state)

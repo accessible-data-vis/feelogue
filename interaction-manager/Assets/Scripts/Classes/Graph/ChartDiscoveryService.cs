@@ -30,7 +30,7 @@ public class ChartDiscoveryService
         }
 
         string[] jsonFiles = Directory.GetFiles(streamingAssetsPath, CHART_JSON_PATTERN);
-        Debug.Log($"Found {jsonFiles.Length} candidate Vega-Lite JSON files");
+        AppLog.Detail(LogArea.Chart, $"Found {jsonFiles.Length} candidate Vega-Lite JSON files");
 
         int chartId = 1;
         foreach (string jsonFilePath in jsonFiles)
@@ -41,10 +41,10 @@ public class ChartDiscoveryService
 
             _discoveredCharts.Add(chart);
             chartId++;
-            Debug.Log($"Discovered chart {chart.id}: {chart.DisplayName} (field={chart.field}, columns={chart.columns.Count})");
+            AppLog.Detail(LogArea.Chart, $"Discovered chart {chart.id}: {chart.DisplayName} (field={chart.field}, columns={chart.columns.Count})");
         }
 
-        Debug.Log($"Total charts discovered: {_discoveredCharts.Count}");
+        AppLog.Info(LogArea.Chart, $"Total charts discovered: {_discoveredCharts.Count}");
         return _discoveredCharts;
     }
 

@@ -107,8 +107,9 @@ public class AgentWakeWord : MonoBehaviour, InterfaceAgentWakeWord
                 audio.Stop();
             }
         }
-        _textToSpeech.SetIsProcessing(false);
-        Debug.Log("All audio stopped.");
+        // Also drops speech that is still being prepared.
+        _textToSpeech.StopSpeechPlayback();
+        AppLog.Detail(LogArea.Speech, "All audio stopped.");
     }
 
     private void StopProcessing()
@@ -152,18 +153,18 @@ public class AgentWakeWord : MonoBehaviour, InterfaceAgentWakeWord
     public void PauseWakeWord()
     {
         StopProcessing();
-        Debug.Log("Wake word detection paused.");
+        AppLog.Detail(LogArea.Speech, "Wake word detection paused.");
     }
 
     public void ResumeWakeWord()
     {
         StartProcessing();
-        Debug.Log("Wake word detection resumed.");
+        AppLog.Detail(LogArea.Speech, "Wake word detection resumed.");
     }
 
     public void RestartWakeWordDetection()
     {
-        Debug.Log("Restarting wake word detection...");
+        AppLog.Info(LogArea.Speech, "Restarting wake word detection...");
 
         // Step 1: Stop all active processes
         StopProcessing();
@@ -185,7 +186,7 @@ public class AgentWakeWord : MonoBehaviour, InterfaceAgentWakeWord
             _porcupineManager = PorcupineManager.FromKeywordPaths(
                 ACCESS_KEY, keywordPaths, OnWakeWordDetected, processErrorCallback: ErrorCallback);
 
-            Debug.Log("PorcupineManager successfully reinitialized.");
+            AppLog.Info(LogArea.Speech, "PorcupineManager successfully reinitialized.");
         }
         catch (PorcupineException ex)
         {
@@ -196,7 +197,7 @@ public class AgentWakeWord : MonoBehaviour, InterfaceAgentWakeWord
         // Step 4: Resume wake word detection
         ResumeWakeWord();
 
-        Debug.Log("Wake word detection restarted successfully.");
+        AppLog.Info(LogArea.Speech, "Wake word detection restarted successfully.");
     }
 
     private void ErrorCallback(Exception e)

@@ -40,7 +40,7 @@ public class RTDPreviewGenerator : MonoBehaviour
         string pngPath = chart.GetFullPngPath();
         if (!string.IsNullOrEmpty(pngPath) && File.Exists(pngPath))
         {
-            UnityEngine.Debug.Log($"PNG preview already exists: {chart.pngFilePath}");
+            AppLog.Detail(LogArea.Chart, $"PNG preview already exists: {chart.pngFilePath}");
             return true;
         }
 
@@ -73,7 +73,7 @@ public class RTDPreviewGenerator : MonoBehaviour
         string outputFilename = $"chart-{chart.chartType}-{chart.dataName}-new.png";
         string outputPath = Path.Combine(Application.streamingAssetsPath, outputFilename);
 
-        UnityEngine.Debug.Log($"Generating PNG preview: {outputFilename}");
+        AppLog.Info(LogArea.Chart, $"Generating PNG preview: {outputFilename}");
 
         try
         {
@@ -105,7 +105,7 @@ public class RTDPreviewGenerator : MonoBehaviour
                 CreateNoWindow = true
             };
 
-            UnityEngine.Debug.Log($"Running: {pythonPath} {arguments}");
+            AppLog.Detail(LogArea.Chart, $"Running: {pythonPath} {arguments}");
 
             // Execute Python script
             Process process = Process.Start(psi);
@@ -117,7 +117,7 @@ public class RTDPreviewGenerator : MonoBehaviour
             // Log output
             if (!string.IsNullOrEmpty(output))
             {
-                UnityEngine.Debug.Log($"Python output: {output}");
+                AppLog.Detail(LogArea.Chart, $"Python output: {output}");
             }
 
             // Check for errors
@@ -135,7 +135,7 @@ public class RTDPreviewGenerator : MonoBehaviour
             if (File.Exists(outputPath))
             {
                 chart.pngFilePath = outputFilename;
-                UnityEngine.Debug.Log($"Preview generated successfully: {outputFilename}");
+                AppLog.Info(LogArea.Chart, $"Preview generated successfully: {outputFilename}");
                 return true;
             }
             else
@@ -168,7 +168,7 @@ public class RTDPreviewGenerator : MonoBehaviour
         int generated = 0;
         int skipped = 0;
 
-        UnityEngine.Debug.Log($"Checking {charts.Count} charts for missing previews...");
+        AppLog.Detail(LogArea.Chart, $"Checking {charts.Count} charts for missing previews...");
 
         foreach (var chart in charts)
         {
@@ -187,7 +187,7 @@ public class RTDPreviewGenerator : MonoBehaviour
             }
         }
 
-        UnityEngine.Debug.Log($"Preview generation complete: {generated} generated, {skipped} skipped");
+        AppLog.Info(LogArea.Chart, $"Preview generation complete: {generated} generated, {skipped} skipped");
         return generated;
     }
 }

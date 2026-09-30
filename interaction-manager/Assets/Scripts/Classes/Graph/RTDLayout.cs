@@ -5,7 +5,7 @@ using UnityEngine;
 using static RTDGridConstants;
 
 /// <summary>
-/// Pure positioning math for RTD grid layout — no grid mutation, no Vega-spec knowledge.
+/// Positioning math for the RTD grid layout. Doesn't change the grid or read the Vega spec.
 /// </summary>
 public static class RTDLayout
 {
@@ -30,12 +30,12 @@ public static class RTDLayout
     }
 
     /// <summary>
-    /// Calculate dynamic bar width based on number of bars in the viewport.
+    /// Calculate dynamic bar width based on number of bars in the window.
     /// </summary>
     public static int CalculateBarWidth(int barCount)
     {
         if (barCount <= 0) return 4;
-        int dataWidth = 50; // cols 6-55
+        int dataWidth = 50; // about the width of the data area (cols 6 onward)
         int rawWidth = (dataWidth / barCount) - 1; // subtract 1 for gap between bars
         return Math.Max(1, rawWidth);
     }

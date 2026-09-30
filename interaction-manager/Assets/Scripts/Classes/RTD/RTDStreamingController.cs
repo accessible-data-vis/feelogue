@@ -157,9 +157,9 @@ public class RTDStreamingController
     {
         if (_nextLineToSend >= _linePackets.Count)
         {
-            Debug.Log("All lines sent and ACKed.");
+            AppLog.Detail(LogArea.Device, "All lines sent and ACKed.");
             if (_staleAckCount > 0 || _futureAckCount > 0)
-                Debug.Log($"ACK summary: stale={_staleAckCount}, future={_futureAckCount}");
+                AppLog.Detail(LogArea.Device, $"ACK summary: stale={_staleAckCount}, future={_futureAckCount}");
             _isStreaming = false;
             StreamingCompleted?.Invoke();
             return;

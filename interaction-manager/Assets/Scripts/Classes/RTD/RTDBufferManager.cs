@@ -245,7 +245,7 @@ public class RTDBufferManager
     {
         if (maxLayers <= 0) maxLayers = RTDConstants.MAX_OVERVIEW_LAYERS;
         _currentOverviewLayer = (_currentOverviewLayer + 1) % maxLayers;
-        Debug.Log($"[Buffer] Switched to overview layer {_currentOverviewLayer}/{maxLayers}");
+        AppLog.Detail(LogArea.Presentation, $"Switched to overview layer {_currentOverviewLayer}/{maxLayers}");
     }
 
     /// <summary>
@@ -255,7 +255,7 @@ public class RTDBufferManager
     {
         if (maxLayers <= 0) maxLayers = RTDConstants.MAX_OVERVIEW_LAYERS;
         _currentOverviewLayer = (_currentOverviewLayer - 1 + maxLayers) % maxLayers;
-        Debug.Log($"[Buffer] Switched to overview layer {_currentOverviewLayer}/{maxLayers}");
+        AppLog.Detail(LogArea.Presentation, $"Switched to overview layer {_currentOverviewLayer}/{maxLayers}");
     }
 
     /// <summary>

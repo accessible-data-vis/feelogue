@@ -1,13 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
 
 /// <summary>
-/// Manages text chunking for long agent responses.
-/// Splits text into sentences and provides navigation (next/previous).
+/// Plays an agent reply chunk by chunk. The agent splits the reply into sentences
+/// ("chunks") and highlight nodes refer to them by index. A reply without chunks is
+/// played as one chunk with every node highlighted.
 /// </summary>
 public class RTDTextChunkingController
 {
@@ -15,31 +15,22 @@ public class RTDTextChunkingController
     private readonly InterfaceTextToSpeech _textToSpeech;
     private readonly InterfaceRTDUpdater _rtdUpdater;
     private readonly SpeechSettings _speechSettings;
-    private readonly Action<JObject, string, bool> _onNodePulsingRequested;
+    // (json, chunk text, chunk index); index is -1 when nodes have no chunk
+    private readonly Action<JObject, string, int> _onNodePulsingRequested;
 
     // ===== State =====
     private bool _chunkModeEnabled = true;
     private List<string> _chunks = new List<string>();
     private int _currentChunkIndex = 0;
+    private bool _hasChunkAssignments = false;
     private JObject _lastAgentResponseJson;
-
-    // ===== Constants =====
-
-    // Pass 1: split before "N. Capital" when preceded by sentence-ending punctuation or colon
-    private static readonly Regex ListItemRegex = new Regex(@"(?<=[.:?!])\s+(?=\d+\.\s+[A-Z])", RegexOptions.Compiled);
-
-    // Pass 2: split on sentence boundaries within a chunk (leading list number already stripped)
-    private static readonly Regex SentenceRegex = new Regex(@"(?<=[a-zA-Z%][.?!])\s+(?=[A-Z(])|(?<=\d+\.)\s+(?=[A-Z(])", RegexOptions.Compiled);
-
-    // Detects a leading list number at the start of a chunk, e.g. "6. "
-    private static readonly Regex LeadingListNumberRegex = new Regex(@"^\d+\.\s+", RegexOptions.Compiled);
 
     // ===== Constructor =====
     public RTDTextChunkingController(
         InterfaceTextToSpeech textToSpeech,
         InterfaceRTDUpdater rtdUpdater,
         SpeechSettings speechSettings,
-        Action<JObject, string, bool> onNodePulsingRequested)
+        Action<JObject, string, int> onNodePulsingRequested)
     {
         _textToSpeech = textToSpeech;
         _rtdUpdater = rtdUpdater;
@@ -56,7 +47,7 @@ public class RTDTextChunkingController
     {
         _chunkModeEnabled = !_chunkModeEnabled;
         string status = _chunkModeEnabled ? "on" : "off";
-        UnityEngine.Debug.Log($"Chunk mode: {status}");
+        AppLog.Info(LogArea.Setup, $"Chunk mode: {status}");
         _textToSpeech.ConvertTextToSpeech($"Chunk mode {status}", _speechSettings, null);
     }
 
@@ -77,86 +68,84 @@ public class RTDTextChunkingController
 
         if (IsChunkModeEnabled())
         {
-            _chunks = ChunkBySentence(responseText);
+            var transmitted = ReadTransmittedChunks(agentResponseJson);
+            _hasChunkAssignments = transmitted != null;
+            // No chunks in the reply: one chunk, all nodes highlighted
+            _chunks = transmitted ?? new List<string> { responseText };
             _currentChunkIndex = 0;
 
-            if (_chunks.Count == 0)
-            {
-                // Fallback: nothing to chunk
-                _textToSpeech.ConvertTextToSpeech(responseText, _speechSettings, onComplete);
-                _rtdUpdater.DisplayBrailleLabel(responseText);
-                _onNodePulsingRequested?.Invoke(_lastAgentResponseJson, responseText, false);
-                return;
-            }
+            AppLog.Detail(LogArea.Agent, $"Chunk count: {_chunks.Count} (transmitted: {_hasChunkAssignments})");
 
             PlayChunk(_lastAgentResponseJson, _chunks[_currentChunkIndex], onComplete);
         }
         else
         {
+            // Chunk mode off: one chunk of this reply, so stepping can't replay an
+            // earlier reply's chunks.
+            _chunks = new List<string> { responseText };
+            _currentChunkIndex = 0;
+            _hasChunkAssignments = false;
+
             _textToSpeech.ConvertTextToSpeech(responseText, _speechSettings, onComplete);
-            _rtdUpdater.DisplayBrailleLabel(responseText);
-            _onNodePulsingRequested?.Invoke(_lastAgentResponseJson, responseText, false);
+            _rtdUpdater.DisplayBrailleLabel(responseText, BrailleLineOwner.Answer);
+            _onNodePulsingRequested?.Invoke(_lastAgentResponseJson, responseText, -1);
         }
     }
 
-    /// <summary>
-    /// Advance to the next chunk (called when user presses button).
-    /// </summary>
-    public void AdvanceToNextChunk()
+    /// <summary>The agent's sentence split of the reply, or null if it has none.</summary>
+    private static List<string> ReadTransmittedChunks(JObject json)
     {
-        if (_chunks == null || _chunks.Count == 0) return;
+        if (json?["agent_response_for_user"]?["chunks"] is not JArray arr) return null;
+
+        // Nodes refer to chunks by index, so keep every entry as sent.
+        var chunks = arr.Select(t => t?.ToString() ?? string.Empty).ToList();
+        return chunks.Any(s => !string.IsNullOrWhiteSpace(s)) ? chunks : null;
+    }
+
+    /// <summary>Play the next chunk; false at the last one.</summary>
+    public bool AdvanceToNextChunk()
+    {
+        if (_chunks == null || _chunks.Count == 0) return false;
 
         if (_currentChunkIndex < _chunks.Count - 1)
         {
             _currentChunkIndex++;
             PlayChunk(_lastAgentResponseJson, _chunks[_currentChunkIndex]);
+            return true;
         }
-        else
-        {
-            UnityEngine.Debug.Log("Already at last chunk...");
-        }
+        AppLog.Detail(LogArea.Agent, "Already at last chunk...");
+        return false;
     }
 
-    /// <summary>
-    /// Step back to the previous chunk (called when user presses button).
-    /// </summary>
-    public void StepBackInChunk()
+    /// <summary>Play the previous chunk from its first braille line; false at the first one.</summary>
+    public bool StepBackInChunk()
     {
-        if (_chunks == null || _chunks.Count == 0) return;
+        if (_chunks == null || _chunks.Count == 0) return false;
 
         if (_currentChunkIndex > 0)
         {
             _currentChunkIndex--;
             PlayChunk(_lastAgentResponseJson, _chunks[_currentChunkIndex]);
+            return true;
         }
-        else
-        {
-            UnityEngine.Debug.Log("Already at first chunk...");
-        }
+        AppLog.Detail(LogArea.Agent, "Already at first chunk...");
+        return false;
     }
 
     // ===== Private Methods =====
 
     /// <summary>
-    /// Play a single chunk with TTS and update display.
-    /// NOTE: Don't call RefreshScreen() here because it displays BaseTitle on the braille line,
-    /// causing a flash before the chunk text appears. Instead, clear agent highlights and display the chunk directly.
-    ///
-    /// PERFORMANCE NOTE: Chunk highlights may appear slower and cause pin buzzing compared to navigation
-    /// because ShowShape() uses enableTail=true (keeps pins raised when touched) whereas navigation uses
-    /// enableTail=false. The tail coroutine repeatedly sends commands to maintain highlights, which causes
-    /// physical pin buzzing. Trade-off: enableTail=true allows tactile exploration without pins staying down
-    /// when touched, but causes buzzing. To eliminate buzzing, ShowShape would need enableTail=false, but
-    /// then touched pins wouldn't pop back up during exploration.
+    /// Speak one chunk, show it on the braille line and highlight its nodes. Avoids
+    /// RefreshScreen, which would flash the chart title first. Agent highlights keep a
+    /// tail so touched pins pop back up, at the cost of some pin buzzing.
     /// </summary>
     private void PlayChunk(JObject json, string chunk, Action onComplete = null)
     {
-        _rtdUpdater.StopPulsePins();
-        _rtdUpdater.ClearHighlights("agent");
-        _rtdUpdater.DisplayBrailleLabel(chunk);
+        _rtdUpdater.StopAgentHighlights();
+        _rtdUpdater.DisplayBrailleLabel(chunk, BrailleLineOwner.Answer);
 
-        UnityEngine.Debug.Log($"Calling HandleNodePulsing for chunk {_currentChunkIndex}: '{chunk}'");
-        _onNodePulsingRequested?.Invoke(json, chunk, true);
+        AppLog.Detail(LogArea.Agent, $"Calling HandleNodePulsing for chunk {_currentChunkIndex}: '{chunk}'");
+        _onNodePulsingRequested?.Invoke(json, chunk, _hasChunkAssignments ? _currentChunkIndex : -1);
 
         bool isMultiChunk = _chunks != null && _chunks.Count > 1;
         bool isFirst = _currentChunkIndex == 0;
@@ -184,53 +173,10 @@ public class RTDTextChunkingController
         {
             _textToSpeech.ConvertTextToSpeech(chunk, _speechSettings, isLast ? onComplete : null);
         }
+
+        // Prepare the next chunk's audio while this one plays.
+        if (_chunks != null && _currentChunkIndex + 1 < _chunks.Count)
+            _textToSpeech.Prefetch(_chunks[_currentChunkIndex + 1], _speechSettings);
     }
 
-    /// <summary>
-    /// Split text into chunks using a two-pass approach:
-    /// Pass 1 splits on numbered list item boundaries (e.g. "1. Sentence"),
-    /// Pass 2 splits on sentence boundaries within each resulting part.
-    /// Stripping the leading list number before Pass 2 prevents false splits
-    /// on the item number itself, then reattaches it to the first sentence.
-    /// </summary>
-    private List<string> ChunkBySentence(string text)
-    {
-        text = (text ?? string.Empty).Trim();
-
-        // Pass 1: split on numbered list item boundaries
-        var pass1 = ListItemRegex.Split(text)
-            .Select(s => s.Trim())
-            .Where(s => s.Length > 0)
-            .ToList();
-
-        // Pass 2: sentence-split within each part
-        var result = new List<string>();
-        foreach (var part in pass1)
-        {
-            var leadingMatch = LeadingListNumberRegex.Match(part);
-            string prefix = leadingMatch.Success ? leadingMatch.Value : string.Empty;
-            string body   = leadingMatch.Success ? part.Substring(leadingMatch.Length) : part;
-
-            var sentences = SentenceRegex.Split(body)
-                .Select(s => s.Trim())
-                .Where(s => s.Length > 0)
-                .ToList();
-
-            if (sentences.Count == 0)
-            {
-                result.Add(part);
-            }
-            else
-            {
-                result.Add(prefix + sentences[0]);
-                result.AddRange(sentences.Skip(1));
-            }
-        }
-
-        UnityEngine.Debug.Log($"Chunk count: {result.Count}");
-        for (int i = 0; i < result.Count; i++)
-            UnityEngine.Debug.Log($"Chunk {i}: '{result[i]}' (length: {result[i].Length})");
-
-        return result;
-    }
 }

@@ -36,13 +36,13 @@ public class RTDDataFormatter
 
         if (value is string strValue)
         {
-            // Pre-formatted timeUnit values (e.g. "2025/03", "2025/Q1", "2025/W15") — display as-is
+            // Pre-formatted timeUnit values (e.g. "2025/03", "2025/Q1", "2025/W15"): display as-is
             if (strValue.Contains("/") &&
                 (strValue.Contains("Q") || strValue.Contains("W") ||
                  System.Text.RegularExpressions.Regex.IsMatch(strValue, @"^\d{4}/\d+")))
                 return strValue;
 
-            // Date strings — infer temporal granularity
+            // Date strings: infer temporal granularity
             if (DateTime.TryParse(strValue, out var date))
             {
                 if (date.Month == 1 && date.Day == 1)
@@ -119,11 +119,13 @@ public class RTDDataFormatter
     }
 
     /// <summary>
-    /// Returns true if a field key should be included in display output.
-    /// Filters out internal fields like _start, _end, and _rtd_index.
+    /// True for fields shown to the user; false for internal ones (_start, _end,
+    /// _rtd_index and the row id).
     /// </summary>
-    private static bool IsDisplayField(string key)
+    public static bool IsDisplayField(string key)
     {
+        if (key == VegaChartLoader.RowIdField)
+            return false;
         if (key.EndsWith("_start") || key.EndsWith("_end"))
             return false;
         if (key.EndsWith("_rtd_index"))

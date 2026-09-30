@@ -14,6 +14,7 @@ public class ButtonGUI : MonoBehaviour, InterfaceButtonGUI
     [SerializeField] private MonoBehaviour mqttManagerService;
     private InterfaceMQTTManager _mqttManager;
     [SerializeField] private MonoBehaviour textToSpeechService;
+    [SerializeField] private SpeechSettings speechSettings;
     private InterfaceTextToSpeech _textToSpeech;
     [SerializeField] private MonoBehaviour rtdUpdaterService;
     private InterfaceRTDUpdater _rtdUpdater;
@@ -143,9 +144,9 @@ public class ButtonGUI : MonoBehaviour, InterfaceButtonGUI
         waitToneButton.onClick.AddListener(ToggleWaitToneMode);
         localIsolationButton.onClick.AddListener(ToggleLocalIsolationMode);
         followUpButton.onClick.AddListener(ToggleFollowUpMode);
-        overviewButton.onClick.AddListener(ToggleOverviewMode);
+        overviewButton.onClick.AddListener(OnOverviewButton);
 
-        MQTTLabel.text = "MQTT-R";
+        MQTTLabel.text = _mqttManager.IsUsingRemote() ? "MQTT-R" : "MQTT-L";
         DoubleTapLabel.text = "Double Tap On";
         valueAudioModeLabel.text = "Audio Label On";
         valueBrailleModeLabel.text = "Braille Label On";
@@ -246,7 +247,7 @@ public class ButtonGUI : MonoBehaviour, InterfaceButtonGUI
             return;
         }
 
-        Debug.Log($"Parsing chart command: {rtdCommand}");
+        AppLog.Detail(LogArea.Chart, $"Parsing chart command: {rtdCommand}");
 
         // Parse command format: {dataName}-{chartType} (e.g., "tslastock-line")
         int lastHyphen = rtdCommand.LastIndexOf('-');
@@ -259,17 +260,17 @@ public class ButtonGUI : MonoBehaviour, InterfaceButtonGUI
         string dataName = rtdCommand.Substring(0, lastHyphen);
         string chartType = rtdCommand.Substring(lastHyphen + 1);
 
-        Debug.Log($"Parsed: dataName='{dataName}', chartType='{chartType}'");
+        AppLog.Detail(LogArea.Chart, $"Parsed: dataName='{dataName}', chartType='{chartType}'");
 
         // Find matching chart by dataName and chartType
         int? chartId = graphLoader.FindChartByDataNameAndType(dataName, chartType);
 
         if (chartId.HasValue)
         {
-            Debug.Log($"Found matching chart ID: {chartId.Value}");
+            AppLog.Detail(LogArea.Chart, $"Found matching chart ID: {chartId.Value}");
 
             // Load the chart in Unity
-            // Note: Chart loading will automatically trigger layer selection and publish layer data to agent
+            // Loading the chart also publishes its data to the agent
             SelectGraphOption(chartId.Value);
         }
         else
@@ -280,7 +281,10 @@ public class ButtonGUI : MonoBehaviour, InterfaceButtonGUI
 
     public void SelectGraphOption(int option)
     {
-        Debug.Log($"Graph option {option} selected");
+        AppLog.Info(LogArea.Chart, $"Graph option {option} selected");
+        // Stored touch data belongs to the old chart. Every chart switch comes
+        // through here (dropdown and agent), so clear it here.
+        _agentResponseHandler?.ResetTouchData();
         graphLoader.LoadChart(option);
     }
 
@@ -304,7 +308,7 @@ public class ButtonGUI : MonoBehaviour, InterfaceButtonGUI
     {
         state = !state;
         label.text = $"{name} {(state ? "On" : "Off")}";
-        Debug.Log($"{name} is now {(state ? "ON" : "OFF")}");
+        AppLog.Info(LogArea.Setup, $"{name} is now {(state ? "ON" : "OFF")}");
     }
 
     public void ToggleDoubleTapMode() => Toggle(ref DoubleTapState, DoubleTapLabel, "Double Tap");
@@ -334,8 +338,34 @@ public class ButtonGUI : MonoBehaviour, InterfaceButtonGUI
     public void ToggleFollowUpMode() => Toggle(ref followUpMode, followUpModeLabel, "Follow Up");
     public bool GetFollowUpMode() => followUpMode;
 
-    public void ToggleOverviewMode() => Toggle(ref overviewMode, overviewModeLabel, "Ov.view");
+    public void ToggleOverviewMode()
+    {
+        Toggle(ref overviewMode, overviewModeLabel, "Ov.view");
+        // Leaving the presentation shows the user's filter again.
+        if (!overviewMode && graphLoader != null)
+            graphLoader.EndOverviewPresentation();
+    }
     public bool GetOverviewMode() => overviewMode;
+
+    public void SetOverviewMode(bool on)
+    {
+        if (overviewMode != on) ToggleOverviewMode();
+    }
+
+    /// <summary>The on-screen button: start the presentation, or end it (announced).</summary>
+    private void OnOverviewButton()
+    {
+        if (overviewMode) _rtdUpdater.EndPresentation(announce: true);
+        else _rtdUpdater.StartOverviewPresentationNow();
+    }
+
+    /// <summary>Turn the mode off without redrawing (a chart load is about to redraw).</summary>
+    public void ClearOverviewMode()
+    {
+        if (!overviewMode) return;
+        overviewMode = false;
+        if (overviewModeLabel != null) overviewModeLabel.text = "Ov.view Off";
+    }
 
     public void ClearScreen()
     {
@@ -351,7 +381,7 @@ public class ButtonGUI : MonoBehaviour, InterfaceButtonGUI
     {
         if (float.TryParse(input, out var v)) TapMinDuration = Mathf.Max(0, v);
         tapMinLabel.text = TapMinDuration.ToString("F2");
-        Debug.Log($"⏱ Tap Min Time set to {TapMinDuration} seconds.");
+        AppLog.Info(LogArea.Setup, $"Tap Min Time set to {TapMinDuration} seconds.");
     }
 
     public float GetTapMinDuration()
@@ -363,7 +393,7 @@ public class ButtonGUI : MonoBehaviour, InterfaceButtonGUI
     {
         if (float.TryParse(input, out var v)) TapMaxDuration = Mathf.Max(TapMinDuration, v);
         tapMaxLabel.text = TapMaxDuration.ToString("F2");
-        Debug.Log($"⏱ Tap Max Time set to {TapMaxDuration} seconds.");
+        AppLog.Info(LogArea.Setup, $"Tap Max Time set to {TapMaxDuration} seconds.");
     }
 
     public float GetTapMaxDuration()
@@ -375,7 +405,7 @@ public class ButtonGUI : MonoBehaviour, InterfaceButtonGUI
     {
         if (float.TryParse(input, out var v)) DoubleTapTimeWindow = Mathf.Max(0, v);
         doubleTapTimeLabel.text = DoubleTapTimeWindow.ToString("F2");
-        Debug.Log($"⏱ Double Tap Time set to {DoubleTapTimeWindow} seconds.");
+        AppLog.Info(LogArea.Setup, $"Double Tap Time set to {DoubleTapTimeWindow} seconds.");
     }
 
     public float GetDoubleTapTimeWindow()
@@ -387,7 +417,7 @@ public class ButtonGUI : MonoBehaviour, InterfaceButtonGUI
     {
         if (float.TryParse(input, out var v)) TapCoolDown = Mathf.Max(0, v);
         tapCoolDownLabel.text = TapCoolDown.ToString("F2");
-        Debug.Log($"⏱ Tap Cool Down set to {TapCoolDown} seconds.");
+        AppLog.Info(LogArea.Setup, $"Tap Cool Down set to {TapCoolDown} seconds.");
     }
 
     public float GetTapCoolDown()
@@ -400,7 +430,7 @@ public class ButtonGUI : MonoBehaviour, InterfaceButtonGUI
         if (float.TryParse(input, out var parsed))
         {
             BlinkDuration = parsed;
-            Debug.Log($"⏱ Duration set to {BlinkDuration} seconds.");
+            AppLog.Info(LogArea.Setup, $"Duration set to {BlinkDuration} seconds.");
         }
         else
         {
@@ -419,7 +449,7 @@ public class ButtonGUI : MonoBehaviour, InterfaceButtonGUI
     {
         if (!string.IsNullOrWhiteSpace(text))
         {
-            Debug.Log($"⠿ Converting to Braille: {text}");
+            AppLog.Detail(LogArea.Braille, $"Converting to Braille: {text}");
 
             _rtdUpdater.DisplayBrailleLabel(text);
 
@@ -429,7 +459,7 @@ public class ButtonGUI : MonoBehaviour, InterfaceButtonGUI
 
     public void OnLabelXYEntered(string command)
     {
-        Debug.Log(command);
+        AppLog.Detail(LogArea.Setup, command);
         if (string.IsNullOrWhiteSpace(command))
             return;
 
@@ -471,7 +501,10 @@ public class ButtonGUI : MonoBehaviour, InterfaceButtonGUI
             {
                 if (node.values != null)
                 {
-                    var valueDescriptions = node.values.Select(kvp => $"{kvp.Key} {kvp.Value}");
+                    // Chart fields only, never the row id.
+                    var valueDescriptions = node.values
+                        .Where(kvp => RTDDataFormatter.IsDisplayField(kvp.Key))
+                        .Select(kvp => $"{kvp.Key} {kvp.Value}");
                     string description = string.Join(", ", valueDescriptions);
                     nodeMessages.Add(description);
                 }
@@ -484,8 +517,8 @@ public class ButtonGUI : MonoBehaviour, InterfaceButtonGUI
         {
             if (GetValueAudioState())
             {
-                Debug.Log($"Final TTS Message: {finalMessage}");
-                _textToSpeech.ConvertTextToSpeech(finalMessage);
+                AppLog.Detail(LogArea.Speech, $"Final TTS Message: {finalMessage}");
+                _textToSpeech.ConvertTextToSpeech(finalMessage, speechSettings, null);
 
             }
 
@@ -496,7 +529,7 @@ public class ButtonGUI : MonoBehaviour, InterfaceButtonGUI
         }
         else
         {
-            _textToSpeech.ConvertTextToSpeech("No matching data found.");
+            _textToSpeech.ConvertTextToSpeech("No matching data found.", speechSettings, null);
         }
 
         labelXYInput.text = "";
@@ -504,7 +537,7 @@ public class ButtonGUI : MonoBehaviour, InterfaceButtonGUI
 
     public void OnAgentXYEntered(string command)
     {
-        Debug.Log(command);
+        AppLog.Detail(LogArea.Setup, command);
         if (string.IsNullOrWhiteSpace(command))
             return;
 
@@ -603,41 +636,31 @@ public class ButtonGUI : MonoBehaviour, InterfaceButtonGUI
 
     public void OnAgentReqEntered(string command)
     {
-        Debug.Log(command);
+        if (string.IsNullOrWhiteSpace(command))
+            return;
+        AppLog.Detail(LogArea.Setup, command);
 
-        var touchdata = new
+        // Send the typed question the same way as a spoken one, with the real touch
+        // data and navigation highlight, wrapped in the speech pipeline's JSON.
+        string transcriptJson = JsonConvert.SerializeObject(new
         {
-            left_touch = FormatTouchNode(_leftTouchValue, "left"),
-            right_touch = FormatTouchNode(_rightTouchValue, "right")
-        };
-
-        var fullMessage = new
-        {
-            user_request_for_agent = new
-            {
-                transcript = new
-                {
-                    text_transcript = command,
-                    confidence = 0.99,
-                },
-                touchdata
-            }
-        };
-
-        string jsonString = JsonConvert.SerializeObject(fullMessage, Formatting.Indented);
-        _mqttManager.PublishInteraction(jsonString);
+            transcript = command,
+            confidence = 0.99,
+            words = new object[0]
+        });
+        _agentResponseHandler.HandleButtonSpeech(transcriptJson, false);
         agentReqInput.text = "";
     }
 
     private void OnLeftTouchEntered(string val)
     {
         _leftTouchValue = string.IsNullOrWhiteSpace(val) ? "No left touch" : val;
-        Debug.Log(_leftTouchValue);
+        AppLog.Detail(LogArea.Touch, _leftTouchValue);
     }
     private void OnRightTouchEntered(string val)
     {
         _rightTouchValue = string.IsNullOrWhiteSpace(val) ? "No right touch" : val;
-        Debug.Log(_rightTouchValue);
+        AppLog.Detail(LogArea.Touch, _rightTouchValue);
     }
 
     private object FormatTouchNode(string input, string which)

@@ -154,6 +154,22 @@
       "field": "series",
       "type": "nominal"
     },
+    "shape": {
+      "field": "series",
+      "type": "nominal",
+      "scale": {
+        "domain": [
+          "Memory",
+          "Storage",
+          "GPU"
+        ],
+        "range": [
+          "cross",
+          "diamond",
+          "triangle-up"
+        ]
+      }
+    },
     "opacity": {
       "value": 1
     }

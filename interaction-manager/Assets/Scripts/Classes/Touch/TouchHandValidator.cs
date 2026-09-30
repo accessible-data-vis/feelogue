@@ -51,7 +51,7 @@ public class TouchHandValidator
                 return conf >= _acceptConfidence;
             }
 
-            // Disagrees with our lock; only allow flip after several LOW-confidence frames
+            // Disagrees with our lock; only allow flip after several low-confidence frames
             if (conf < _releaseConfidence)
             {
                 _wrongChiralityLowConfFrames++;
