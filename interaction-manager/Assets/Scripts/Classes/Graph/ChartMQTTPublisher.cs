@@ -99,7 +99,9 @@ public static class ChartMQTTPublisher
 
     /// <summary>
     /// Publish the displayed chart's data to the agent, with its field names, after
-    /// every render. Handles single- and multi-series (color field) charts.
+    /// every render. Handles single- and multi-series (color field) charts. Rows keep
+    /// every field, not only the plotted ones, so the agent can name a point (a
+    /// scatterplot's car model, say).
     /// </summary>
     public static void PublishCurrentLayerData(
         InterfaceMQTTManager mqttManager,
@@ -156,16 +158,7 @@ public static class ChartMQTTPublisher
             }
 
             filteredData = currentVegaSpec.Data.Values.Select(row => {
-                var filtered = new Dictionary<string, object>();
-
-                if (row.ContainsKey(baseXField))
-                    filtered[baseXField] = row[baseXField];
-
-                if (row.ContainsKey(yField))
-                    filtered[yField] = row[yField];
-
-                if (row.ContainsKey(colorField))
-                    filtered[colorField] = row[colorField];
+                var filtered = new Dictionary<string, object>(row);
 
                 // Visibility: X window is based on unique X index
                 string xKey = row.ContainsKey(baseXField) ? (row[baseXField]?.ToString() ?? "") : "";
@@ -184,8 +177,6 @@ public static class ChartMQTTPublisher
                 }
                 bool isHiddenSeries = hiddenSeries != null && row.ContainsKey(colorField) && hiddenSeries.Contains(row[colorField]?.ToString() ?? "");
                 filtered["in_view"] = !isHiddenSeries && isInXWindow && isInYWindow;
-                if (row.TryGetValue(VegaChartLoader.RowIdField, out var rowId))
-                    filtered[VegaChartLoader.RowIdField] = rowId;
 
                 return filtered;
             }).ToList();
@@ -194,13 +185,7 @@ public static class ChartMQTTPublisher
         {
             // Single-series: index directly into rows
             filteredData = currentVegaSpec.Data.Values.Select((row, index) => {
-                var filtered = new Dictionary<string, object>();
-
-                if (row.ContainsKey(baseXField))
-                    filtered[baseXField] = row[baseXField];
-
-                if (row.ContainsKey(yField))
-                    filtered[yField] = row[yField];
+                var filtered = new Dictionary<string, object>(row);
 
                 bool isInXWindow = index >= windowStart && index < (windowStart + windowSize);
                 bool isInYWindow = true;
@@ -214,8 +199,6 @@ public static class ChartMQTTPublisher
                     catch { isInYWindow = true; }
                 }
                 filtered["in_view"] = isInXWindow && isInYWindow;
-                if (row.TryGetValue(VegaChartLoader.RowIdField, out var rowId))
-                    filtered[VegaChartLoader.RowIdField] = rowId;
 
                 return filtered;
             }).ToList();

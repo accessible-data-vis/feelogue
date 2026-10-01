@@ -10,4 +10,6 @@ public interface InterfaceSpeechToText
     void SetSkipStatus(bool status);
     void StopSpeechRecognition();
     void CancelSpeechRecognition();
+    // True from the start of a recording until its transcript is delivered.
+    bool IsRecognizing { get; }
 }

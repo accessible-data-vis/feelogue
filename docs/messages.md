@@ -25,7 +25,7 @@ held for this load (see below) run when the next `layer_data_update` arrives.
 
 | field | meaning |
 |---|---|
-| `chart_type` | `line`, `bar` or `point` |
+| `chart_type` | the spec's `metadata.chartType` (`line`, `scatter`, ...) |
 | `data_name` | the chart's data name |
 | `schema` | the Vega-Lite spec as loaded; its `overview` block, if any, is the authored presentation text |
 | `rendered` | what the display actually draws: `{chart_type, series: [{name, symbol}] or null, y_domain, y_ticks, points_shown, points_total}` |
@@ -37,11 +37,11 @@ Sent after a load and on every redraw. Replaces the agent's data frame.
 | field | meaning |
 |---|---|
 | `layer_name` | the data name |
-| `chart_type` | as above |
+| `chart_type` | the Vega-Lite mark: `line`, `bar` or `point` |
 | `x_field`, `y_field` | the chart's x and y fields |
 | `series_field` | *optional*: the colour field on multi-series charts |
 | `data_count` | number of rows |
-| `data` | every row: the chart's fields, `_id` (row id) and `in_view` (drawn on the display now) |
+| `data` | every row with all its fields, plotted or not (a scatterplot point's name, say), plus `_id` (row id) and `in_view` (drawn on the display now) |
 
 While the presentation runs, `in_view` ignores the series it isolates: the agent
 sees the whole chart.

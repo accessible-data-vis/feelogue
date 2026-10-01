@@ -76,6 +76,34 @@ def test_agent_reads_layer_data(monkeypatch):
     assert {"_id", "in_view", "route"} <= set(ctx.get_df().columns)
 
 
+def test_questions_see_fields_the_chart_does_not_plot(monkeypatch):
+    """A scatterplot plots power and emissions, but "which car" needs the model."""
+    import agent.context as ctx
+    import agent.data_query as dq
+    monkeypatch.setattr(ctx, "_df", None)
+    monkeypatch.setattr(mh.graph, "update_state", lambda cfg, patch: None)
+    rows = [{"model": "Tesla Model S", "type": "EV", "power_kw": 510, "co2_gkm": 60, "_id": "row-0", "in_view": True},
+            {"model": "Toyota Hilux", "type": "ICE", "power_kw": 275, "co2_gkm": 257, "_id": "row-1", "in_view": True}]
+    msg = {"message_type": "layer_data_update", "layer_name": "efficiencypower", "chart_type": "point",
+           "x_field": "power_kw", "y_field": "co2_gkm", "series_field": "type", "data_count": 2, "data": rows}
+    mh.on_message(None, None, type("M", (), {"payload": json.dumps(msg).encode()}))
+
+    asked = {}
+
+    class _Executor:
+        def invoke(self, _):
+            return {"output": "Tesla Model S"}
+
+    def fake_executor(df, selected, cols, state):
+        asked["columns"] = list(selected.columns)
+        return _Executor()
+
+    monkeypatch.setattr(dq, "_get_executor", fake_executor)
+    state = {"x_field": "power_kw", "y_field": "co2_gkm", "chart_type": "point", "color_field": "type", "messages": []}
+    assert dq.csv_query_tool.func("Which car has the most power?", state) == "Tesla Model S"
+    assert "model" in asked["columns"]
+
+
 def test_agent_reads_a_question(monkeypatch):
     import agent.orchestrator as orch
     seen = {}
