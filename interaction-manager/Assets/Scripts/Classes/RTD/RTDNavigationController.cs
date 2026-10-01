@@ -103,7 +103,8 @@ public class RTDNavigationController
         }
         else
         {
-            Debug.LogWarning("No data point nodes found to navigate.");
+            // Expected on the presentation's title and axis layers, which draw no data.
+            AppLog.Detail(LogArea.Buttons, "No data points to step through");
             _currentDataMarkIndex = -1;
         }
     }

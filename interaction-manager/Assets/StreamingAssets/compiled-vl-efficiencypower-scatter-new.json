@@ -1,0 +1,213 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "description": "Vehicle Power vs CO2 Emissions - Scatterplot",
+  "width": 487,
+  "height": 364,
+  "data": {
+    "name": "source",
+    "values": [
+      {
+        "model": "Tesla Model 3",
+        "manufacturer": "Tesla",
+        "type": "EV",
+        "power_kw": 395,
+        "co2_gkm": 73
+      },
+      {
+        "model": "Tesla Model S",
+        "manufacturer": "Tesla",
+        "type": "EV",
+        "power_kw": 510,
+        "co2_gkm": 60
+      },
+      {
+        "model": "Tesla Model Y",
+        "manufacturer": "Tesla",
+        "type": "EV",
+        "power_kw": 455,
+        "co2_gkm": 113
+      },
+      {
+        "model": "BYD Atto 3",
+        "manufacturer": "BYD",
+        "type": "EV",
+        "power_kw": 220,
+        "co2_gkm": 68
+      },
+      {
+        "model": "BYD Seal",
+        "manufacturer": "BYD",
+        "type": "EV",
+        "power_kw": 330,
+        "co2_gkm": 57
+      },
+      {
+        "model": "MG ZS EV",
+        "manufacturer": "MG",
+        "type": "EV",
+        "power_kw": 145,
+        "co2_gkm": 93
+      },
+      {
+        "model": "Toyota Prius",
+        "manufacturer": "Toyota",
+        "type": "Hybrid",
+        "power_kw": 90,
+        "co2_gkm": 98
+      },
+      {
+        "model": "Toyota RAV4 Hybrid",
+        "manufacturer": "Toyota",
+        "type": "Hybrid",
+        "power_kw": 185,
+        "co2_gkm": 140
+      },
+      {
+        "model": "Toyota Camry Hybrid",
+        "manufacturer": "Toyota",
+        "type": "Hybrid",
+        "power_kw": 150,
+        "co2_gkm": 116
+      },
+      {
+        "model": "Honda CR-V Hybrid",
+        "manufacturer": "Honda",
+        "type": "Hybrid",
+        "power_kw": 235,
+        "co2_gkm": 171
+      },
+      {
+        "model": "Honda Civic",
+        "manufacturer": "Honda",
+        "type": "ICE",
+        "power_kw": 170,
+        "co2_gkm": 210
+      },
+      {
+        "model": "Mazda 3",
+        "manufacturer": "Mazda",
+        "type": "ICE",
+        "power_kw": 215,
+        "co2_gkm": 220
+      },
+      {
+        "model": "Kia Cerato",
+        "manufacturer": "Kia",
+        "type": "ICE",
+        "power_kw": 110,
+        "co2_gkm": 185
+      },
+      {
+        "model": "Toyota Hilux",
+        "manufacturer": "Toyota",
+        "type": "ICE",
+        "power_kw": 275,
+        "co2_gkm": 257
+      }
+    ]
+  },
+  "mark": {
+    "type": "point",
+    "filled": true,
+    "size": 150,
+    "tooltip": true
+  },
+  "encoding": {
+    "x": {
+      "field": "power_kw",
+      "type": "quantitative",
+      "title": "Power (kW)",
+      "scale": {
+        "domain": [
+          0,
+          600
+        ]
+      }
+    },
+    "y": {
+      "field": "co2_gkm",
+      "type": "quantitative",
+      "title": "CO2 Emissions (g/km)",
+      "scale": {
+        "domain": [
+          0,
+          300
+        ]
+      }
+    },
+    "color": {
+      "field": "type",
+      "type": "nominal",
+      "title": "Vehicle Type",
+      "scale": {
+        "domain": [
+          "EV",
+          "Hybrid",
+          "ICE"
+        ],
+        "range": [
+          "#1f77b4",
+          "#ff7f0e",
+          "#d62728"
+        ]
+      }
+    },
+    "shape": {
+      "field": "type",
+      "type": "nominal",
+      "scale": {
+        "domain": [
+          "EV",
+          "Hybrid",
+          "ICE"
+        ],
+        "range": [
+          "triangle-up",
+          "cross",
+          "diamond"
+        ]
+      }
+    },
+    "tooltip": [
+      {
+        "field": "model",
+        "type": "nominal"
+      },
+      {
+        "field": "type",
+        "type": "nominal"
+      },
+      {
+        "field": "power_kw",
+        "type": "quantitative"
+      },
+      {
+        "field": "co2_gkm",
+        "type": "quantitative"
+      }
+    ],
+    "opacity": {
+      "value": 1
+    }
+  },
+  "overview": {
+    "title": "Vehicle power versus CO2 emissions, scatterplot.",
+    "x_axis": "The X axis shows power in kilowatts, from 0 to 600.",
+    "y_axis": "The Y axis shows CO2 emissions in grams per kilometre, from 0 to 300. Lower values indicate lower emissions. EV emissions are calculated using the Australian grid average of 510 grams of CO2 per kilowatt-hour.",
+    "EV": "Plotted with the arrow symbol, electric vehicles range from 57 to 113 grams of CO2 per kilometre, with power from 145 to 510 kilowatts.",
+    "Hybrid": "Plotted with the plus symbol, hybrid vehicles range from 98 to 171 grams of CO2 per kilometre, with power from 90 to 235 kilowatts.",
+    "ICE": "Plotted with the cross symbol, internal combustion vehicles range from 185 to 257 grams of CO2 per kilometre, with power from 110 to 275 kilowatts.",
+    "summary": "EVs produce the lowest emissions, clustering at the bottom of the chart between 57 and 113 g/km. Hybrids occupy the middle range from 98 to 171 g/km. ICE vehicles produce the most CO2, from 185 to 257 g/km."
+  },
+  "config": {
+    "background": "white",
+    "view": {
+      "stroke": null
+    }
+  },
+  "metadata": {
+    "dataName": "efficiencypower",
+    "chartType": "scatter",
+    "displayName": "Vehicle Power and CO2 Emissions - Scatterplot"
+  }
+}

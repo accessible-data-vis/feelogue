@@ -255,6 +255,8 @@ public class SpeechToText : MonoBehaviour, InterfaceSpeechToText
         StopCurrentRecognition();
         CleanupRecognition("cancelled transcript");
     }
+    public bool IsRecognizing => isProcessing;
+
     public bool GetSkipStatus()
     {
         return skip;

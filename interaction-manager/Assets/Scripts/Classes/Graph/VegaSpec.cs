@@ -103,6 +103,23 @@ public class VegaEncoding
     [JsonProperty("shape")]
     public JToken Shape { get; set; }  // {"field", "scale": {"domain": [...], "range": [...]}}
 
+    [JsonProperty("tooltip")]
+    public JToken Tooltip { get; set; }  // a field definition or a list of them
+
+    /// <summary>Fields the tooltip channel names, in order. Empty when it names none.</summary>
+    public List<string> GetTooltipFields()
+    {
+        var fields = new List<string>();
+        if (Tooltip == null) return fields;
+        IEnumerable<JToken> defs = Tooltip.Type == JTokenType.Array ? Tooltip.Children() : (IEnumerable<JToken>)new[] { Tooltip };
+        foreach (var def in defs)
+        {
+            string field = def.Type == JTokenType.Object ? def["field"]?.ToString() : null;
+            if (!string.IsNullOrEmpty(field)) fields.Add(field);
+        }
+        return fields;
+    }
+
     /// <summary>
     /// Series name -> Vega-Lite shape name, from shape.scale.domain/range when the shape
     /// channel encodes the given (series) field. Empty when the spec declares none.

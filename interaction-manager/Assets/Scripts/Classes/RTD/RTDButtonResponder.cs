@@ -165,6 +165,7 @@ public class RTDButtonResponder : MonoBehaviour, InterfaceRTDButtonResponder
     {
         _rtdUpdater.CancelPendingPresentation();
         if (TrySkipAfterF1(_panNextState, +1)) return;
+        CancelRecording();
         if (_panPrevState.IsPressed)
         {
             HandlePanChord(_panPrevState, "Pan Left", forward: true);
@@ -221,6 +222,7 @@ public class RTDButtonResponder : MonoBehaviour, InterfaceRTDButtonResponder
     {
         _rtdUpdater.CancelPendingPresentation();
         if (TrySkipAfterF1(_panPrevState, -1)) return;
+        CancelRecording();
         if (_panNextState.IsPressed)
         {
             HandlePanChord(_panNextState, "Pan Right", forward: false);
@@ -290,13 +292,18 @@ public class RTDButtonResponder : MonoBehaviour, InterfaceRTDButtonResponder
     }
 
     /// <summary>
-    /// F1 then a pan within the push-to-talk delay skips like pan + F1. Cancels the
-    /// recording and uses up the pan press.
+    /// F1 then a pan skips like pan + F1. Within the push-to-talk delay the
+    /// recording never starts; after it, the open recording is dropped. Uses up
+    /// the pan press.
     /// </summary>
     private bool TrySkipAfterF1(PanModifierState pan, int dir)
     {
-        if (_agentHoldState.Coroutine == null || _agentHoldState.IsHeld) return false;
-        StopCoroutine(_agentHoldState.Coroutine);
+        if (_agentHoldState.IsHeld)
+            CancelRecording();
+        else if (_agentHoldState.Coroutine != null)
+            StopCoroutine(_agentHoldState.Coroutine);
+        else
+            return false;
         _agentHoldState.Reset();
         pan.IsPressed = true;
         pan.PressTime = Time.time;
@@ -315,6 +322,7 @@ public class RTDButtonResponder : MonoBehaviour, InterfaceRTDButtonResponder
         // Keys without one (F2 stop, F3 repeat, F4 refresh) always do their own job.
         if (_panPrevState.IsPressed && !_panPrevState.CombinationUsed && config.PanLeftAction != null)
         {
+            CancelRecording();
             PromoteModifier(_panPrevState, $"Pan Left (F{functionNumber})");
             if (!string.IsNullOrEmpty(config.PanLeftLog))
                 AppLog.Info(LogArea.Buttons, config.PanLeftLog);
@@ -325,6 +333,7 @@ public class RTDButtonResponder : MonoBehaviour, InterfaceRTDButtonResponder
 
         if (_panNextState.IsPressed && !_panNextState.CombinationUsed && config.PanRightAction != null)
         {
+            CancelRecording();
             PromoteModifier(_panNextState, $"Pan Right (F{functionNumber})");
             if (!string.IsNullOrEmpty(config.PanRightLog))
                 AppLog.Info(LogArea.Buttons, config.PanRightLog);
@@ -364,6 +373,29 @@ public class RTDButtonResponder : MonoBehaviour, InterfaceRTDButtonResponder
         _speechToText.StartSpeechRecognition(
             transcript => _agentResponseHandler.HandleButtonSpeech(transcript, false), true, "none", () => AppLog.Detail(LogArea.Speech, "STT complete")
         );
+    }
+
+    /// <summary>
+    /// Paging, stepping or skipping moves on from a question still being recorded.
+    /// Drop it, so speech that starts now isn't recorded as the question. With F1
+    /// still down, end the hold as its release would (end tone, wake word back on);
+    /// after release the end tone has already played.
+    /// </summary>
+    private void CancelRecording()
+    {
+        bool recording = _speechToText.IsRecognizing;
+        if (!recording && !_agentHoldState.IsHeld) return;
+        if (recording)
+        {
+            _speechToText.CancelSpeechRecognition();
+            AppLog.Info(LogArea.Buttons, "Recording cancelled: moved on");
+        }
+        if (_agentHoldState.IsHeld)
+        {
+            _audioToneManager.PlayEndTone();
+            _agentWakeWord.ResumeWakeWord();
+            _agentHoldState.Reset();
+        }
     }
 
     private void PromoteModifier(PanModifierState s, string who)

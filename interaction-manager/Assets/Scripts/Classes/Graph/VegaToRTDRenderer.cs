@@ -553,8 +553,9 @@ public static class VegaToRTDRenderer
                 AppLog.Detail(LogArea.Render, $"Symbols: {dataPointPositions.Count} points drawn with symbols, {overlapCount} overlaps detected");
             }
 
-            // Draw connecting lines between consecutive same-series points (Bresenham)
-            if (opts.DrawConnectingLines)
+            // Draw connecting lines between consecutive same-series points (Bresenham).
+            // Never on a scatterplot: its points are not a sequence.
+            if (opts.DrawConnectingLines && chartType != "point")
             {
                 // Minimum distance between points to draw a connecting line
                 // When symbolClearance > 0, skip lines between very close points
@@ -690,6 +691,7 @@ public static class VegaToRTDRenderer
 
                     bool isHiddenNode = isHiddenSeries || !inRangeFilter;
                     var dataNode = new ChartNode($"data-point-{globalNodeIndex}", isHiddenNode ? "data-hidden" : "data-point");
+                    if (!isHiddenNode) CopyLabelFields(dataNode.Values, spec, row, xField, yField, colorField);
                     if (!isHiddenNode && colorField != null) dataNode.Values[colorField] = seriesVal;
                     dataNode.Values[xField] = row[xField];
                     dataNode.Values[yField] = row[yField];
@@ -936,6 +938,7 @@ public static class VegaToRTDRenderer
 
             // Create a node for every data point (visible and hidden)
             var dataNode = new ChartNode($"data-point-{globalIndex}", "data-point");
+            CopyLabelFields(dataNode.Values, spec, point, xField, yField);
             dataNode.Values[xField] = point[xField];
             dataNode.Values[yField] = point[yField];  // Store original value to preserve precision for visibility matching
             CopyRowId(dataNode.Values, point);
@@ -1009,6 +1012,19 @@ public static class VegaToRTDRenderer
         }
 
         return RTDLayout.GenerateNiceTicks(windowYMin, windowYMax, 6);
+    }
+
+    /// <summary>
+    /// Copy the fields the spec's tooltip names, other than the plotted ones (a
+    /// scatterplot point's name, say). They go in first, so the point's label starts
+    /// with them.
+    /// </summary>
+    private static void CopyLabelFields(Dictionary<string, object> nodeValues, VegaSpec spec,
+        Dictionary<string, object> sourceRow, params string[] plotted)
+    {
+        foreach (var field in spec.Encoding.GetTooltipFields())
+            if (Array.IndexOf(plotted, field) < 0 && sourceRow.TryGetValue(field, out var value))
+                nodeValues[field] = value;
     }
 
     /// <summary>Copy the row id onto the pin so agent highlights can find it.</summary>

@@ -75,13 +75,6 @@ public class VegaChartLoader : MonoBehaviour
     private ChartDiscoveryService _chartDiscovery;
     private List<DiscoveredChart> _availableCharts;
 
-    // ===== Current Chart State =====
-    private string filePath;
-    public string chartType;
-    private string dataName;
-    private string schema;
-    private string imagePath;
-
     // ===== Current Chart Reference =====
     private DiscoveredChart _currentChart;
     private VegaSpec _currentVegaSpec;
@@ -374,8 +367,12 @@ public class VegaChartLoader : MonoBehaviour
 
             AppLog.Detail(LogArea.Render, $"Generated {grid.GetLength(0)}x{grid.GetLength(1)} RTD grid with {nodes.Count} nodes");
 
+            // The mark type, not the metadata's chartType: highlights, stepping order and
+            // bar geometry all test for "bar" or "point".
+            string markType = _currentVegaSpec.GetMarkType();
+
             // Generate graph visualization from nodes
-            _graphVisualizer.GenerateGraph(nodes, chartType, dataName);
+            _graphVisualizer.GenerateGraph(nodes, markType, chart.dataName);
 
             // Set up visibility filtering: show every node only when the window
             // holds all the data; otherwise hide what falls outside it.
@@ -420,7 +417,7 @@ public class VegaChartLoader : MonoBehaviour
             _rtdUpdater.DisplayImageInUnityFromBase();
 
             // Set chart type and highlight configs for highlight manager
-            _rtdUpdater.SetChartType(chartType);
+            _rtdUpdater.SetChartType(markType);
             _rtdUpdater.SetInterleavedNavigation(interleavedNavigation);
             _rtdUpdater.SetUseSeriesSymbols(useSeriesSymbols);
             _rtdUpdater.SetSeriesSymbolOverrides(ResolveSeriesSymbols());
