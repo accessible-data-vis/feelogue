@@ -49,6 +49,9 @@ WHITELISTED reformatting:
   column (from the column name or axis title) is required context, not a
   reformatting of the value. This is the ONLY way a unit may be attached;
   a unit no permitted source states is never attached.
+- Unit symbols are spoken as words, scale first: "$K" is "thousand dollars",
+  "$M" is "million dollars", "%" is "percent" (250 in "revenue ($K)" is
+  "250 thousand dollars"). The number itself is unchanged.
 """
 
 

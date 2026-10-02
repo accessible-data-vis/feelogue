@@ -24,6 +24,7 @@ Three components communicate via MQTT:
 - **Conversational Agent** (`agent/`): Python. Classifies intent, resolves deictic references using touch context, and runs a LangChain/GPT-4o calculation pipeline for data queries
 
 The messages between Unity and the agent are described in [docs/messages.md](docs/messages.md).
+How to add a chart, and how the agent writes its presentation text, is in [docs/charts.md](docs/charts.md).
 
 ## Requirements
 

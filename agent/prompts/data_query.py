@@ -149,6 +149,7 @@ def get_data_query_system_prompt(
     color_field: str | None = None,
     df=None,
     vega_lite_schema: str = '',
+    display_marks: list | None = None,
 ) -> str:
     """Build the stable system prompt for the data-query loop (the prompt-cache prefix)."""
     def _format_sample(sample:dict) -> str:
@@ -188,8 +189,10 @@ You have a limited tool-call budget, enforced by the system. Break the problem i
   and nothing below softens it.
 - chart_image_tool looks at the chart AS DRAWN and is the only source of
   APPEARANCE: which colour an element is drawn in, and how the legend and axes
-  are labelled. Its picture shows every series, including any the user has
-  hidden. It knows nothing about the tactile symbols the user feels.
+  are labelled. Its picture is the chart as the display shows it now: a series
+  the display isn't showing (hidden by the user, or another series during the
+  presentation) is drawn faint. It knows nothing about the tactile symbols the
+  user feels.
 - MAIN PURPOSE: Resolving color references from the user's query.
 - The handoff between them is the normal case. When the user refers to something
   by how it looks ("the blue line"), you cannot resolve it from
@@ -197,11 +200,12 @@ You have a limited tool-call budget, enforced by the system. Break the problem i
   gives you in your csv_query_tool query. Do not guess the mapping, and do not
   ask csv_query_tool about a colour.
 - A colour resolves in this order, every time:
-  1. Get the series names from csv_query_tool. That list is the ground truth;
+  1. Get EVERY series name from csv_query_tool, including hidden ones: a
+     colour can name a series the user hid. That list is the ground truth;
      the image never supplies a name of its own.
   2. Ask chart_image_tool which of THOSE names is drawn in the colour the user
-     said: quote the list, and ask for every member that matches, copied
-     exactly, or NONE.
+     said: quote the list, say that hidden series are drawn faint in their
+     colour, and ask for every member that matches, copied exactly, or NONE.
   3. Accept the answer only if it is an exact member of the list. A near-miss
      is a misread, not an informal name to map. If several match, or none,
      ask which series the user means, naming them.
@@ -350,6 +354,12 @@ AN EMPTY COMPARISON IS NOT A NEGATIVE FINDING:
   never repeat it. Past about four series, summarise across them - name the
   outliers and characterise the rest - instead of giving every series its
   own pair.
+- STACKED BARS (mark `bar` with a series column): each bar is the sum of its
+  segments. A question about a bar or an x-value ("which quarter was
+  highest?") means the bar totals unless a series is named, and every
+  segment of a bar the answer names is anchored. A trend, instead of the
+  multiple-series format above: one sentence on the totals, then one short
+  sentence per series.
 - TREND ON A SCATTERPLOT (mark `point`): the trend is how y changes as x
   increases. Answer it; never explain this to the user.
   - Ask csv_query_tool for the correlation between x and y in each series and
@@ -584,6 +594,16 @@ Use them to resolve implicit references - e.g. pronouns ("it", "that"), follow-u
             f"- When the user refers to a series informally or approximately (e.g. 'memory' instead of 'Memory'), map it to the closest exact series name before querying. If the mapping is non-obvious, mention it in your answer.\n"
             f"- If a user-provided series name cannot be confidently mapped to any real value in `{color_field}`, do NOT guess - use csv_query_tool to list the valid series names first, then report NOT_FOUND and the valid options.\n"
             f"- Absence is not zero: if a filter on `{color_field}` matches no rows, never report 0. Report that no data was found for that series and list the available series.\n"
+        )
+
+    drawn = [m for m in (display_marks or [])
+             if isinstance(m, dict) and m.get("name") and (m.get("symbol") or m.get("texture"))]
+    if len(drawn) > 1:   # a single series needs no telling apart
+        marks = "; ".join(f"{m['name']}: {m.get('texture') or m.get('symbol')}" for m in drawn)
+        kind = "texture" if drawn[0].get("texture") else "symbol"
+        prompt += (
+            f"\n**How the display draws each series** ({kind}): {marks}.\n"
+            f"Use these names when the user asks which series is which, or how one is drawn.\n"
         )
 
     if vega_lite_schema:

@@ -69,6 +69,8 @@ public interface InterfaceRTDUpdater
     Dictionary<string, List<Vector2Int>> GetActiveGestureHighlights();
     void ClearHighlights(string hand);
     void SetChartType(string chartType);
+    // Units for spoken and brailled values, from the chart's axis titles
+    void SetAxisUnits(string xField, string xTitle, string yField, string yTitle);
     void SetInterleavedNavigation(bool value);
     void SetUseSeriesSymbols(bool value);
     /// <summary>Symbol per series index; Default falls back to the renderer's rotation.</summary>

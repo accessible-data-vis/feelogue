@@ -32,6 +32,7 @@ class AgentState(TypedDict):
     image_format: Optional[str]
     active_layer: Optional[str]
     vega_lite_schema: Optional[str]
+    display_marks: Optional[list]   # how the display draws each series: [{name, symbol}] or, for bars, [{name, texture}]
 
     # Follow-up / disambiguation: persisted so next turn sees pending state
     followup_stage: bool

@@ -131,7 +131,7 @@ def trim_schema_data(schema : dict, n : int=5) -> dict:
         return schema or {}
     # Avoid changing original schema
     trimmed_schema = deepcopy(schema)
-    for key in ("image_data", "image_format", "overview", "metadata"):
+    for key in ("image_data", "image_format", "overview", "usermeta"):
         trimmed_schema.pop(key, None)
     trimmed_schema.setdefault("data", {})
 

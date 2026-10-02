@@ -17,7 +17,7 @@ CHARTS = sorted(ASSETS.glob("compiled-vl-*.json"))   # discovery scans the root 
 
 def preview_for(spec: dict) -> Path | None:
     """The preview Unity loads (ChartDiscoveryService.ResolvePreviewImage)."""
-    meta = spec.get("metadata") or {}
+    meta = spec.get("usermeta") or {}
     if meta.get("previewImage"):
         return ASSETS / meta["previewImage"]
     variant = f"-{meta['variant']}" if meta.get("variant") else ""
@@ -45,7 +45,7 @@ def test_preview_matches_its_spec(chart):
 
 
 def test_editing_presentation_text_needs_no_redraw():
-    spec = {"mark": "line", "overview": {"title": "A"}, "metadata": {"dataName": "x"}}
+    spec = {"mark": "line", "overview": {"title": "A"}, "usermeta": {"dataName": "x"}}
     edited = {**spec, "overview": {"title": "B"}, "description": "new"}
     assert stamp.spec_digest(spec) == stamp.spec_digest(edited)
     assert stamp.spec_digest(spec) != stamp.spec_digest({**spec, "mark": "bar"})

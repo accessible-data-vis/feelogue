@@ -29,15 +29,28 @@ public static class RTDLayout
         return pixelMin + (index * availableWidth + numGaps / 2) / numGaps;
     }
 
+    // Empty pins between neighbouring bars.
+    public const int BAR_GAP = 2;
+
     /// <summary>
-    /// Calculate dynamic bar width based on number of bars in the window.
+    /// Bar width for this many bars: the widest that keeps a 2-pin gap between bars
+    /// across the data area, made odd so vertical stripes sit evenly in the outline.
+    /// Seven bars are 5 pins wide, the least that shows every texture.
     /// </summary>
-    public static int CalculateBarWidth(int barCount)
+    public static int BarWidth(int barCount)
     {
-        if (barCount <= 0) return 4;
-        int dataWidth = 50; // about the width of the data area (cols 6 onward)
-        int rawWidth = (dataWidth / barCount) - 1; // subtract 1 for gap between bars
-        return Math.Max(1, rawWidth);
+        int n = Math.Max(1, barCount);
+        int area = VegaToRTDRenderer.X_PIXEL_MAX_LIMIT - VegaToRTDRenderer.X_PIXEL_MIN + 1;
+        int width = (area - BAR_GAP * (n - 1)) / n;
+        if (width % 2 == 0) width--;
+        return Math.Max(1, width);
+    }
+
+    /// <summary>Centre column of bar <paramref name="index"/>; bars start at the left of the data area.</summary>
+    public static int BarCenter(int index, int barCount)
+    {
+        int width = BarWidth(barCount);
+        return VegaToRTDRenderer.X_PIXEL_MIN + index * (width + BAR_GAP) + width / 2;
     }
 
     /// <summary>

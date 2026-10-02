@@ -27,8 +27,8 @@ public class VegaSpec
     [JsonProperty("overview")]
     public Dictionary<string, string> Overview { get; set; }
 
-    [JsonProperty("metadata")]
-    public ChartMetadata Metadata { get; set; }
+    [JsonProperty("usermeta")]
+    public ChartMetadata Usermeta { get; set; }
 
     public string GetMarkType()
     {
@@ -45,8 +45,8 @@ public class VegaSpec
 }
 
 /// <summary>
-/// Chart metadata block. Lives inside the Vega spec JSON under "metadata".
-/// Replaces filename-based parsing - the filename is now just an identifier.
+/// Chart metadata, in the spec's "usermeta" block (Vega-Lite's place for data of
+/// its own, which it passes on and ignores). The filename is just an identifier.
 /// </summary>
 [Serializable]
 public class ChartMetadata
@@ -65,6 +65,11 @@ public class ChartMetadata
 
     [JsonProperty("previewImage")]
     public string PreviewImage { get; set; }
+
+    // Optional bar texture per series ("solid", "vertical stripes", "checkerboard",
+    // "hollow"); Vega-Lite has no channel for it. Unnamed series follow the stack order.
+    [JsonProperty("textures")]
+    public Dictionary<string, string> Textures { get; set; }
 
     public bool IsValid() =>
         !string.IsNullOrEmpty(DataName) &&
@@ -172,6 +177,9 @@ public class VegaChannel
     [JsonProperty("axis")]
     public VegaAxis Axis { get; set; }
 
+    [JsonProperty("title")]
+    public string Title { get; set; }
+
     public bool IsCategorical()
     {
         return Type == "nominal" || Type == "ordinal";
@@ -212,12 +220,17 @@ public class VegaAxis
     [JsonProperty("values")]
     public JToken Values { get; set; }  // Array of tick values
 
+    /// <summary>The numeric tick values, or null when there are none (e.g. "Q1".."Q4").</summary>
     public float[] GetNumericValues()
     {
         if (Values == null || Values.Type != JTokenType.Array)
             return null;
 
-        return Values.ToObject<float[]>();
+        var numbers = new List<float>();
+        foreach (var v in Values)
+            if (v.Type == JTokenType.Integer || v.Type == JTokenType.Float)
+                numbers.Add(v.Value<float>());
+        return numbers.Count > 0 ? numbers.ToArray() : null;
     }
 }
 

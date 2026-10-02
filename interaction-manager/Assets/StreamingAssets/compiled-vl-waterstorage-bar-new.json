@@ -1,47 +1,43 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
-  "description": "Interest Rate - Line Chart",
+  "description": "Melbourne water storage, 2018 to 2024 - Bar Chart",
   "width": 487,
   "height": 364,
   "data": {
     "values": [
       {
+        "year": 2018,
+        "storage (%)": 62
+      },
+      {
         "year": 2019,
-        "interest rate (%)": 1.17
+        "storage (%)": 63
       },
       {
         "year": 2020,
-        "interest rate (%)": 0.33
+        "storage (%)": 75
       },
       {
         "year": 2021,
-        "interest rate (%)": 0.13
+        "storage (%)": 90
       },
       {
         "year": 2022,
-        "interest rate (%)": 1.31
+        "storage (%)": 97
       },
       {
         "year": 2023,
-        "interest rate (%)": 3.91
+        "storage (%)": 95
       },
       {
         "year": 2024,
-        "interest rate (%)": 4.35
-      },
-      {
-        "year": 2025,
-        "interest rate (%)": 3.9
+        "storage (%)": 86
       }
     ]
   },
   "mark": {
-    "type": "line",
-    "tooltip": true,
-    "point": {
-      "filled": true,
-      "size": 150
-    }
+    "type": "bar",
+    "tooltip": true
   },
   "encoding": {
     "x": {
@@ -50,13 +46,23 @@
       "title": "Year"
     },
     "y": {
-      "field": "interest rate (%)",
+      "field": "storage (%)",
       "type": "quantitative",
-      "title": "Interest Rate (%)",
+      "title": "Storage (%)",
       "scale": {
         "domain": [
           0,
-          5
+          100
+        ]
+      },
+      "axis": {
+        "values": [
+          0,
+          20,
+          40,
+          60,
+          80,
+          100
         ]
       }
     },
@@ -71,14 +77,11 @@
     "background": "white",
     "view": {
       "stroke": null
-    },
-    "mark": {
-      "strokeWidth": 2
     }
   },
   "usermeta": {
-    "dataName": "interestrates",
-    "chartType": "line",
-    "displayName": "Interest Rate - Line Chart"
+    "dataName": "waterstorage",
+    "chartType": "bar",
+    "displayName": "Melbourne Water Storage - Bar Chart"
   }
 }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 /// <summary>
 /// Formats chart node data for Text-to-Speech, Braille display, and visual labels.
@@ -67,6 +68,48 @@ public class RTDDataFormatter
 
     // ── Instance TTS/Braille formatter ───────────────────────────────────────
 
+    // How each field's numbers are spoken, from its axis title (set per chart)
+    private Dictionary<string, Func<string, string>> _unitByField = new Dictionary<string, Func<string, string>>();
+
+    /// <summary>
+    /// Speak the chart's x and y numbers with their units, as the agent does: "$190",
+    /// "4.35%", "395 kW", "120 thousand dollars".
+    /// </summary>
+    public void SetAxisUnits(string xField, string xTitle, string yField, string yTitle)
+    {
+        _unitByField = new Dictionary<string, Func<string, string>>();
+        foreach (var (field, title) in new[] { (xField, xTitle), (yField, yTitle) })
+        {
+            var unit = UnitFormatter(title, field);
+            if (!string.IsNullOrEmpty(field) && unit != null)
+                _unitByField[field] = unit;
+        }
+    }
+
+    /// <summary>The unit a field's numbers carry, from its axis title or name, or null.</summary>
+    private static Func<string, string> UnitFormatter(string title, string field)
+    {
+        string text = $"{title} {field}";
+        var m = Regex.Match(title ?? "", @"\(([^)]*)\)");
+        if (!m.Success) m = Regex.Match(field ?? "", @"\(([^)]*)\)");
+        string unit = m.Success ? m.Groups[1].Value.Trim() : null;
+
+        var scaled = Regex.Match(unit ?? "", @"^\$\s*([KMB])$", RegexOptions.IgnoreCase);   // "$K": thousands of dollars
+        if (scaled.Success)
+        {
+            string word = scaled.Groups[1].Value.ToUpperInvariant() == "K" ? "thousand"
+                        : scaled.Groups[1].Value.ToUpperInvariant() == "M" ? "million" : "billion";
+            return n => $"{n} {word} dollars";
+        }
+        if (text.Contains("$") || Regex.IsMatch(text, @"\b(AUD|USD|dollars?)\b", RegexOptions.IgnoreCase))
+            return n => $"${n}";
+        if (unit == "%")
+            return n => $"{n}%";
+        if (!string.IsNullOrEmpty(unit))
+            return n => $"{n} {unit}";
+        return null;
+    }
+
     /// <summary>
     /// Format node values for TTS output, filtering by probability threshold.
     /// </summary>
@@ -112,7 +155,9 @@ public class RTDDataFormatter
 
         var parts = node.values
             .Where(kvp => IsDisplayField(kvp.Key))
-            .Select(kvp => FormatValue(kvp.Value))
+            .Select(kvp => kvp.Value is string || !_unitByField.TryGetValue(kvp.Key, out var unit)
+                ? FormatValue(kvp.Value)
+                : unit(FormatValue(kvp.Value)))
             .ToList();
 
         return string.Join(", ", parts);

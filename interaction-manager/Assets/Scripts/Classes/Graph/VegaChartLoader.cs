@@ -27,7 +27,6 @@ public class VegaChartLoader : MonoBehaviour
     [Header("Multi-Series Options")]
     [SerializeField] private bool drawConnectingLines = true;
     [SerializeField] private bool useSeriesSymbols = true;
-    [SerializeField] private bool useThickBars = false;
     [SerializeField] private bool useSeriesLinePatterns = false;
     [SerializeField] private bool useSeriesLineThickness = false;
     [SerializeField] private bool useBarTextures = false;
@@ -68,8 +67,9 @@ public class VegaChartLoader : MonoBehaviour
     [Tooltip("Start the layered presentation (title layer) when a chart loads.")]
     [SerializeField] private bool autoStartPresentation = true;
 
-    [Header("Thick Bar Limits")]
-    [SerializeField] private int maxBarsDisplayed = 10;
+    // Line points or bars shown at once. Seven keeps a line visible between symbols
+    // and bars wide enough for every texture with 2 pins between them.
+    private const int MAX_MARKS_SHOWN = 7;
 
     // ===== Auto-Discovery =====
     private ChartDiscoveryService _chartDiscovery;
@@ -353,7 +353,6 @@ public class VegaChartLoader : MonoBehaviour
             {
                 DrawConnectingLines = drawConnectingLines,
                 UseSeriesSymbols = useSeriesSymbols,
-                UseThickBars = useThickBars,
                 HiddenSeries = hiddenSet,
                 UseSeriesLinePatterns = useSeriesLinePatterns,
                 UseSeriesLineThickness = useSeriesLineThickness,
@@ -418,10 +417,12 @@ public class VegaChartLoader : MonoBehaviour
 
             // Set chart type and highlight configs for highlight manager
             _rtdUpdater.SetChartType(markType);
+            var axes = _currentVegaSpec.Encoding;
+            _rtdUpdater.SetAxisUnits(axes?.X?.Field, axes?.X?.Title, axes?.Y?.Field, axes?.Y?.Title);
             _rtdUpdater.SetInterleavedNavigation(interleavedNavigation);
             _rtdUpdater.SetUseSeriesSymbols(useSeriesSymbols);
             _rtdUpdater.SetSeriesSymbolOverrides(ResolveSeriesSymbols());
-            _rtdUpdater.SetHighlightConfigs(gestureConfig, agentConfig, navConfig);
+            _rtdUpdater.SetHighlightConfigs(ForMark(gestureConfig, markType), ForMark(agentConfig, markType), ForMark(navConfig, markType));
 
             // Set chart title for braille display and refresh
             string chartTitle = chart.DisplayName ?? $"{chart.chartType} - {chart.dataName}";
@@ -595,24 +596,10 @@ public class VegaChartLoader : MonoBehaviour
         // Determine chart type
         string chartType = _currentVegaSpec.GetMarkType();
 
-        // Set max window points based on chart type
-        // Line charts: 50 pins wide / 2 = 25 max points
-        // Bar charts: depends on thick mode - need min 3px bar + 1px gap = max 12 bars
-        // Scatter plots can show all points (overlapping is OK)
-        string colorField2 = _currentVegaSpec.Encoding?.GetColorField();
-        bool isStackedBar = (chartType == "bar" && colorField2 != null);
-        if (chartType == "bar" && (useThickBars || isStackedBar))
-        {
-            _maxWindowPoints = maxBarsDisplayed;
-        }
-        else if (chartType == "line" || chartType == "bar")
-        {
-            _maxWindowPoints = 25;
-        }
-        else
-        {
-            _maxWindowPoints = _totalDataPoints;  // No limit for scatter
-        }
+        // Lines and bars show at most MAX_MARKS_SHOWN; scatterplots show every point.
+        _maxWindowPoints = (chartType == "line" || chartType == "bar")
+            ? MAX_MARKS_SHOWN
+            : _totalDataPoints;
 
         // Calculate full data Y-range
         string yField = _currentVegaSpec.Encoding?.Y?.Field;
@@ -633,6 +620,22 @@ public class VegaChartLoader : MonoBehaviour
             {
                 _dataYMin = 0f;
                 _dataYMax = 1f;
+            }
+
+            // Bars start at zero, and a stacked bar reaches its total.
+            string xField = _currentVegaSpec.Encoding?.X?.Field;
+            string seriesField = _currentVegaSpec.Encoding?.GetColorField();
+            if (chartType == "bar" && allYValues.Any())
+            {
+                _dataYMin = Math.Min(0f, _dataYMin);
+                if (seriesField != null && xField != null)
+                {
+                    float maxTotal = _currentVegaSpec.Data.Values
+                        .Where(d => d.ContainsKey(yField) && d.ContainsKey(xField))
+                        .GroupBy(d => d[xField]?.ToString())
+                        .Max(g => g.Sum(d => Math.Abs(Convert.ToSingle(d[yField]))));
+                    _dataYMax = Math.Max(_dataYMax, maxTotal);
+                }
             }
         }
         else
@@ -991,8 +994,22 @@ public class VegaChartLoader : MonoBehaviour
     }
 
     /// <summary>
-    /// What the display shows, for the agent: each series' symbol by its spoken name,
-    /// and the Y range and ticks drawn (the spec may not state them).
+    /// Bars highlight their infill rather than a box, the paper's grammar for bars; each
+    /// source keeps its own animation and duration.
+    /// </summary>
+    private static HighlightConfig ForMark(HighlightConfig config, string markType)
+    {
+        if (markType == "bar")
+        {
+            config.Shape = HighlightMarkShape.BarInterior;
+            config.UseBatchSend = true;
+        }
+        return config;
+    }
+
+    /// <summary>
+    /// What the display shows, for the agent: each series' symbol (or, for bars, texture)
+    /// by its spoken name, and the Y range and ticks drawn (the spec may not state them).
     /// </summary>
     private object GetRenderedChartInfo()
     {
@@ -1010,7 +1027,24 @@ public class VegaChartLoader : MonoBehaviour
         // Bars are drawn solid or textured, never with symbols; a single-series scatter
         // uses one pin per point.
         object series = null;
-        if (chartType != "bar" && useSeriesSymbols)
+        if (chartType == "bar")
+        {
+            if (multiSeries)
+            {
+                var stackOrder = VegaToRTDRenderer.BarStackOrder(_currentVegaSpec, availableSeries);
+                series = availableSeries.Select(name => new
+                {
+                    name,
+                    texture = RTDGridConstants.SpokenTextureName(
+                        VegaToRTDRenderer.BarTexture(_currentVegaSpec, name, stackOrder, useBarTextures))
+                }).ToList<object>();
+            }
+            else
+            {
+                series = new List<object> { new { name = "data", texture = "solid" } };
+            }
+        }
+        else if (useSeriesSymbols)
         {
             series = multiSeries
                 ? availableSeries.Select((name, i) => new { name, symbol = SymbolFor(i) }).ToList<object>()

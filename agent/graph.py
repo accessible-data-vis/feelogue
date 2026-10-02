@@ -114,6 +114,7 @@ def _run_tool_loop(state: AgentState , enriched_query:str, max_iterations: int =
         color_field=state.get("color_field"),
         df=df,
         vega_lite_schema=state.get("vega_lite_schema"),
+        display_marks=state.get("display_marks"),
     ))
     scope = get_data_query_scope(df, state.get("hidden_series"), state.get("presentation"))
     context_messages = [SystemMessage(content="**Data Scope**:\n" + scope)] if scope else []

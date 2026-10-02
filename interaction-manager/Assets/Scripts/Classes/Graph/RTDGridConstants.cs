@@ -78,10 +78,35 @@ public static class RTDGridConstants
     // Chart area bounds
     public const int CHART_MAX_COL = 58;
 
-    // Bar fill patterns
+    // Bar fill patterns: the four textures co-designers could tell apart by touch.
     public const int BAR_FILL_SOLID = 0;
     public const int BAR_FILL_VERTICAL = 1;
     public const int BAR_FILL_CHECKERBOARD = 2;
-    public const int BAR_FILL_HORIZONTAL = 3;
+    public const int BAR_FILL_HOLLOW = 3;   // outline only
     public const int BAR_FILL_PATTERN_COUNT = 4;
+
+    /// <summary>The fill pattern a spoken texture name stands for.</summary>
+    public static bool TryParseTexture(string name, out int fillPattern)
+    {
+        switch ((name ?? "").Trim().ToLowerInvariant())
+        {
+            case "solid":            fillPattern = BAR_FILL_SOLID;        return true;
+            case "vertical stripes": fillPattern = BAR_FILL_VERTICAL;     return true;
+            case "checkerboard":     fillPattern = BAR_FILL_CHECKERBOARD; return true;
+            case "hollow":           fillPattern = BAR_FILL_HOLLOW;       return true;
+            default:                 fillPattern = BAR_FILL_SOLID;        return false;
+        }
+    }
+
+    /// <summary>The spoken name for each bar fill pattern.</summary>
+    public static string SpokenTextureName(int fillPattern)
+    {
+        switch (fillPattern)
+        {
+            case BAR_FILL_VERTICAL:     return "vertical stripes";
+            case BAR_FILL_CHECKERBOARD: return "checkerboard";
+            case BAR_FILL_HOLLOW:       return "hollow";
+            default:                    return "solid";
+        }
+    }
 }

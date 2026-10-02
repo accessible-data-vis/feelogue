@@ -174,15 +174,6 @@
       "value": 1
     }
   },
-  "overview": {
-    "title": "DDR5 Memory, SSD Storage and GPU average price, February 2025 to February 2026, multi-series line chart.",
-    "x_axis": "The X axis shows every second month from February 2025 to February 2026.",
-    "y_axis": "The Y axis shows average price, from 0 dollars to $1200, in steps of 200.",
-    "Memory": "Plotted using the plus symbol, Memory prices rose sharply, with two major surges across the period.",
-    "Storage": "Plotted with the cross symbol, Storage prices rose gradually and steadily throughout the period.",
-    "GPU": "Plotted with the arrow symbol, GPU prices remained relatively flat across the period.",
-    "summary": "Storage rose steadily, GPU stayed flat, and Memory surged dramatically. Memory crosses Storage at $360 in August 2025, then meets GPU at $850 in December 2025, before pulling sharply away from both."
-  },
   "config": {
     "background": "white",
     "view": {
@@ -192,7 +183,7 @@
       "strokeWidth": 2
     }
   },
-  "metadata": {
+  "usermeta": {
     "dataName": "ramprice",
     "chartType": "line",
     "displayName": "Computer Component Prices - Line Chart"

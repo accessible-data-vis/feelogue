@@ -1,7 +1,8 @@
 """
 Runtime state shared across modules that stays out of AgentState: the live
-DataFrame (MemorySaver can't serialize pandas objects), the graph thread id,
-generated presentation text, and the held rest of a request that loads a chart.
+DataFrame (MemorySaver can't serialize pandas objects), the loaded chart's spec,
+the graph thread id, generated presentation text, and the held rest of a request
+that loads a chart.
 """
 import threading
 
@@ -31,6 +32,19 @@ def set_generated_overview(data_name: str, data_digest: str, overview: dict) -> 
 
 def get_df() -> pd.DataFrame | None:
     return _df
+
+
+# The loaded chart's full spec, for drawing what the display shows now
+_chart_spec: dict | None = None
+
+
+def set_chart_spec(spec: dict | None) -> None:
+    global _chart_spec
+    _chart_spec = spec
+
+
+def get_chart_spec() -> dict | None:
+    return _chart_spec
 
 
 # The rest of a request that loads a chart ("open airfares and hide Sydney") waits

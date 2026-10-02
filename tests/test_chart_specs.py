@@ -18,20 +18,24 @@ def series_of(spec: dict) -> list[str]:
 @pytest.mark.parametrize("chart", CHARTS, ids=lambda p: p.name)
 def test_spec_has_what_unity_needs(chart):
     spec = json.loads(chart.read_text())
-    meta = spec.get("metadata") or {}
+    meta = spec.get("usermeta") or {}
     # ChartDiscoveryService skips a spec without these.
     assert meta.get("dataName") and meta.get("chartType") and meta.get("displayName")
 
+    # The agent writes every chart's presentation text, so no spec carries its own.
+    assert "overview" not in spec
+
     series = series_of(spec)
-    overview = spec.get("overview")
-    if overview:
-        # Each series is a presentation layer, looked up by its exact name.
-        assert not set(series) - set(overview), f"no layer text for {set(series) - set(overview)}"
 
     shape = spec["encoding"].get("shape")
     if shape and series:
         # A series left out takes the Inspector's symbol, which can match another's.
         assert not set(series) - set(shape["scale"]["domain"])
+
+    # Textures named in usermeta must be real ones, for series the chart has.
+    textures = meta.get("textures") or {}
+    assert set(textures.values()) <= {"solid", "vertical stripes", "checkerboard", "hollow"}
+    assert not set(textures) - set(series), f"textures for unknown series {set(textures) - set(series)}"
 
     fields = {k for row in spec["data"]["values"] for k in row}
     tooltip = spec["encoding"].get("tooltip") or []

@@ -1,21 +1,36 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "description": "AAPL closing prices by hour on May 6, 2026.",
-  "metadata": {
-    "dataName": "aaplstock",
-    "chartType": "line",
-    "variant": "intraday",
-    "displayName": "AAPL Intraday - May 6, 2026"
-  },
   "data": {
     "values": [
-      {"time": "2026-05-06T16:00:00", "close": 286.14},
-      {"time": "2026-05-06T17:00:00", "close": 284.87},
-      {"time": "2026-05-06T18:00:00", "close": 285.5814},
-      {"time": "2026-05-06T19:00:00", "close": 286.23},
-      {"time": "2026-05-06T20:00:00", "close": 287.664},
-      {"time": "2026-05-06T21:00:00", "close": 287.305},
-      {"time": "2026-05-06T22:00:00", "close": 287.463}
+      {
+        "time": "2026-05-06T16:00:00",
+        "close": 286.14
+      },
+      {
+        "time": "2026-05-06T17:00:00",
+        "close": 284.87
+      },
+      {
+        "time": "2026-05-06T18:00:00",
+        "close": 285.5814
+      },
+      {
+        "time": "2026-05-06T19:00:00",
+        "close": 286.23
+      },
+      {
+        "time": "2026-05-06T20:00:00",
+        "close": 287.664
+      },
+      {
+        "time": "2026-05-06T21:00:00",
+        "close": 287.305
+      },
+      {
+        "time": "2026-05-06T22:00:00",
+        "close": 287.463
+      }
     ]
   },
   "mark": "line",
@@ -24,13 +39,24 @@
       "field": "time",
       "type": "temporal",
       "title": "Time",
-      "axis": {"format": "%H:%M", "labelAngle": 0}
+      "axis": {
+        "format": "%H:%M",
+        "labelAngle": 0
+      }
     },
     "y": {
       "field": "close",
       "type": "quantitative",
       "title": "Close Price (USD)",
-      "scale": {"zero": false}
+      "scale": {
+        "zero": false
+      }
     }
+  },
+  "usermeta": {
+    "dataName": "aaplstock",
+    "chartType": "line",
+    "variant": "intraday",
+    "displayName": "AAPL Intraday - May 6, 2026"
   }
 }
