@@ -190,22 +190,13 @@
       "value": 1
     }
   },
-  "overview": {
-    "title": "Vehicle power versus CO2 emissions, scatterplot.",
-    "x_axis": "The X axis shows power in kilowatts, from 0 to 600.",
-    "y_axis": "The Y axis shows CO2 emissions in grams per kilometre, from 0 to 300. Lower values indicate lower emissions. EV emissions are calculated using the Australian grid average of 510 grams of CO2 per kilowatt-hour.",
-    "EV": "Plotted with the arrow symbol, electric vehicles range from 57 to 113 grams of CO2 per kilometre, with power from 145 to 510 kilowatts.",
-    "Hybrid": "Plotted with the plus symbol, hybrid vehicles range from 98 to 171 grams of CO2 per kilometre, with power from 90 to 235 kilowatts.",
-    "ICE": "Plotted with the cross symbol, internal combustion vehicles range from 185 to 257 grams of CO2 per kilometre, with power from 110 to 275 kilowatts.",
-    "summary": "EVs produce the lowest emissions, clustering at the bottom of the chart between 57 and 113 g/km. Hybrids occupy the middle range from 98 to 171 g/km. ICE vehicles produce the most CO2, from 185 to 257 g/km."
-  },
   "config": {
     "background": "white",
     "view": {
       "stroke": null
     }
   },
-  "metadata": {
+  "usermeta": {
     "dataName": "efficiencypower",
     "chartType": "scatter",
     "displayName": "Vehicle Power and CO2 Emissions - Scatterplot"

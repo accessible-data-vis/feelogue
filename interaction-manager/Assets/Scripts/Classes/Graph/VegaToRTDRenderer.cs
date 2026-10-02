@@ -18,7 +18,6 @@ public static class VegaToRTDRenderer
     {
         public bool DrawConnectingLines { get; set; }
         public bool UseSeriesSymbols { get; set; }
-        public bool UseThickBars { get; set; }
         public HashSet<string> HiddenSeries { get; set; }
         public bool UseSeriesLinePatterns { get; set; }
         public bool UseSeriesLineThickness { get; set; }
@@ -51,17 +50,53 @@ public static class VegaToRTDRenderer
 
     /// <summary>
     /// Bounds for index-mapped x (categorical/temporal). The right edge moves in so every gap
-    /// is the same width; halfBar insets thick bars. Falls back to the fixed bounds when the
-    /// blank space on the right would be wider than two gaps (e.g. 15-24 points).
+    /// is the same width. Falls back to the fixed bounds when the blank space on the right
+    /// would be wider than two gaps.
     /// </summary>
-    private static (int xPixelMin, int xPixelMax, int yPixelMin, int yPixelMax) GetChartPixelBounds(int visiblePointCount, int halfBar = 0)
+    private static (int xPixelMin, int xPixelMax, int yPixelMin, int yPixelMax) GetChartPixelBounds(int visiblePointCount)
     {
         if (visiblePointCount < 2) return GetChartPixelBounds();
-        int gap = (X_PIXEL_MAX_LIMIT - X_PIXEL_MIN - 2 * halfBar) / (visiblePointCount - 1);
+        int gap = (X_PIXEL_MAX_LIMIT - X_PIXEL_MIN) / (visiblePointCount - 1);
         if (gap < 1) return GetChartPixelBounds();   // more points than columns
-        int xPixelMax = X_PIXEL_MIN + 2 * halfBar + gap * (visiblePointCount - 1);
+        int xPixelMax = X_PIXEL_MIN + gap * (visiblePointCount - 1);
         if (X_PIXEL_MAX_LIMIT - xPixelMax > 2 * gap) return GetChartPixelBounds();
         return (X_PIXEL_MIN, xPixelMax, 0, 36);
+    }
+
+    /// <summary>Bounds for bars: from the left of the data area to the last bar's right edge.</summary>
+    private static (int xPixelMin, int xPixelMax, int yPixelMin, int yPixelMax) GetBarPixelBounds(int barCount)
+    {
+        int n = Math.Max(1, barCount);
+        int rightEdge = RTDLayout.BarCenter(n - 1, n) + RTDLayout.BarWidth(n) / 2;
+        return (X_PIXEL_MIN, rightEdge, 0, 36);
+    }
+
+    /// <summary>
+    /// A series' bar texture: the one the spec's usermeta names for it, else its place in
+    /// the stack order. Solid when textures are off.
+    /// </summary>
+    public static int BarTexture(VegaSpec spec, string series, List<string> stackOrder, bool useTextures)
+    {
+        if (!useTextures) return BAR_FILL_SOLID;
+        var named = spec.Usermeta?.Textures;
+        if (named != null && named.TryGetValue(series, out var name) && TryParseTexture(name, out int pattern))
+            return pattern;
+        return Math.Max(0, stackOrder.IndexOf(series)) % BAR_FILL_PATTERN_COUNT;
+    }
+
+    /// <summary>
+    /// Bar stack order, bottom to top: the colour scale's domain reversed when the spec
+    /// gives one, else reverse-alphabetical, as Vega-Lite stacks. A series' place in it
+    /// also picks its texture.
+    /// </summary>
+    public static List<string> BarStackOrder(VegaSpec spec, List<string> series)
+    {
+        var colorDomain = spec.Encoding?.GetColorStringDomain();
+        if (colorDomain == null || colorDomain.Count == 0)
+            return series.OrderByDescending(s => s).ToList();
+        var ordered = Enumerable.Reverse(colorDomain).Where(series.Contains).ToList();
+        ordered.AddRange(series.Where(s => !ordered.Contains(s)).OrderByDescending(s => s));
+        return ordered;
     }
 
     /// <summary>
@@ -133,10 +168,11 @@ public static class VegaToRTDRenderer
             return GenerateMultiSeries(spec, grid, windowStart, windowSize, windowYMin, windowYMax, chartType, xField, yField, colorField, opts);
         }
 
-        if (chartType == "line")
+        // Single-series lines and bars share the multi-series code (one series)
+        if (chartType == "line" || chartType == "bar")
             return GenerateMultiSeries(spec, grid, windowStart, windowSize, windowYMin, windowYMax, chartType, xField, yField, null, opts);
 
-        // Single-series bar/scatter path
+        // Single-series scatter path
         var fullData = spec.Data.Values;
         var windowedData = fullData.GetRange(windowStart, Math.Min(windowSize, fullData.Count - windowStart));
 
@@ -243,8 +279,9 @@ public static class VegaToRTDRenderer
 
         var (xPixelMin, xPixelMax, yPixelMin, yPixelMax) = xIsQuantitative
             ? GetChartPixelBounds()
-            : GetChartPixelBounds(windowedXValues.Count,
-                chartType == "bar" ? RTDLayout.CalculateBarWidth(windowedXValues.Count) / 2 : 0);
+            : chartType == "bar"
+                ? GetBarPixelBounds(windowedXValues.Count)
+                : GetChartPixelBounds(windowedXValues.Count);
 
         // For scatter plots with quantitative X: compute xMin/xMax and nice tick values
         float xMin = 0f, xMax = 1f;
@@ -269,11 +306,7 @@ public static class VegaToRTDRenderer
 
         // Draw X-axis ticks
         int windowedCount = windowedXValues.Count;
-        // Pre-compute stacked bar geometry (used by bar tick loop and bar drawing section)
-        int stackedBarWidth = RTDLayout.CalculateBarWidth(windowedCount);
-        int stackedHalfBar = stackedBarWidth / 2;
-        int barXPixelMin = xPixelMin + stackedHalfBar;
-        int barXPixelMax = xPixelMax - stackedHalfBar;
+        int barWidth = RTDLayout.BarWidth(windowedCount);
         int xTickIndex = 0;
         if (!hideXAxisMulti && xIsQuantitative && xTickValues != null)
         {
@@ -295,9 +328,9 @@ public static class VegaToRTDRenderer
             const int MAX_X_TICKS = 10;
             for (int i = 0; i < windowedCount; i++)
             {
-                int tickXMin = chartType == "bar" ? barXPixelMin : xPixelMin;
-                int tickXMax = chartType == "bar" ? barXPixelMax : xPixelMax;
-                int col = RTDLayout.MapIndexToPixel(i, windowedCount, tickXMin, tickXMax);
+                int col = chartType == "bar"
+                    ? RTDLayout.BarCenter(i, windowedCount)
+                    : RTDLayout.MapIndexToPixel(i, windowedCount, xPixelMin, xPixelMax);
                 object xVal = windowedXValues[i];
 
                 bool drawTick = specTickSet != null
@@ -312,91 +345,91 @@ public static class VegaToRTDRenderer
             }
         }
 
-        // Stacked bar chart path vs line/scatter path
+        // Bar chart path (a single series is a stack of one) vs line/scatter path
         if (chartType == "bar")
         {
-            // ===== Stacked bar chart =====
-            // Always use thick bars for stacked charts (thin stacked bars would be confusing)
-
-            // Determine stack order: reverse-alphabetical = bottom segment first.
-            // This matches Vega-Lite's default: color domain is alphabetical, bars stack last-alpha at bottom.
-            // If the spec provides an explicit color scale domain, use that order reversed instead.
-            List<string> stackOrder;
-            var colorDomain = spec.Encoding.GetColorStringDomain();
-            if (colorDomain != null && colorDomain.Count > 0)
-                stackOrder = Enumerable.Reverse(colorDomain).Where(s => seriesNames.Contains(s)).ToList();
-            else
-                stackOrder = seriesNames.OrderByDescending(s => s).ToList();
-            AppLog.Detail(LogArea.Render, $"Stacked bar chart: {seriesNames.Count} series, {windowedCount} X positions, barWidth={stackedBarWidth}, stack order (bottom→top): [{string.Join(", ", stackOrder)}]");
+            // ===== Bar chart =====
+            // Stack order and textures come from the whole series list, so a series keeps
+            // its place in the order and its texture when others are hidden.
+            var fullStackOrder = BarStackOrder(spec, allSeriesNames);
+            var stackOrder = fullStackOrder.Where(s => seriesNames.Contains(s)).ToList();
+            AppLog.Detail(LogArea.Render, $"Bar chart: {seriesNames.Count} series, {windowedCount} X positions, barWidth={barWidth}, stack order (bottom→top): [{string.Join(", ", stackOrder)}]");
 
             int globalNodeIndex = 0;
             int windowEnd = effectiveStart + effectiveSize;
+            int RowOf(float v) =>
+                Math.Max(yPixelMin, Math.Min(yPixelMax, RTDLayout.MapValueToPixel(v, yMin, yMax, yPixelMax, yPixelMin)));
 
+            if (!hideAllData)
+            {
             // Drawing + node creation pass for windowed X positions
             for (int i = 0; i < windowedCount; i++)
             {
                 object xVal = windowedXValues[i];
                 string xKey = xVal.ToString();
-                int col = RTDLayout.MapIndexToPixel(i, windowedCount, barXPixelMin, barXPixelMax);
+                int col = RTDLayout.BarCenter(i, windowedCount);
 
                 if (!xGrouped.ContainsKey(xKey)) continue;
 
-                // Collect values for each series at this X, in stack order (biggest total first = bottom)
+                // This bar's segments, bottom first
                 var seriesValues = new List<(string seriesName, float value, Dictionary<string, object> rowData)>();
                 foreach (var seriesName in stackOrder)
                 {
-                    var matchingRow = xGrouped[xKey].FirstOrDefault(r =>
-                        r.ContainsKey(colorField) && r[colorField].ToString() == seriesName && r.ContainsKey(yField));
-                    if (matchingRow != null)
-                    {
-                        float val = RTDLayout.GetNumericValue(matchingRow[yField]);
-                        seriesValues.Add((seriesName, val, matchingRow));
-                    }
+                    var matchingRow = xGrouped[xKey].FirstOrDefault(r => r.ContainsKey(yField) &&
+                        (colorField == null || (r.ContainsKey(colorField) && r[colorField].ToString() == seriesName)));
+                    float value = matchingRow != null ? RTDLayout.GetNumericValue(matchingRow[yField]) : 0f;
+                    if (value != 0f)   // a zero segment draws nothing, and takes no gap
+                        seriesValues.Add((seriesName, value, matchingRow));
                 }
 
-                // Stack segments upward from zero-line
-                // zeroLineRow is in pixel space (higher row = lower on screen)
-                int currentTopRow = zeroLineRow; // Start stacking from zero-line
+                // Segments start one row off the zero line, which is drawn and is never part
+                // of a bar. Edges sit on the running totals, so the bar's top is at its total;
+                // the 1-pin gap between two segments comes out of the taller one, and when
+                // neither can spare a row the segments above move up one. Every segment
+                // keeps at least one row. A lone segment runs from the zero line to its
+                // value, downward when negative.
+                var bottoms = new int[seriesValues.Count];
+                var tops = new int[seriesValues.Count];
+                if (seriesValues.Count == 1 && seriesValues[0].value < 0)
+                {
+                    tops[0] = zeroLineRow + 1;
+                    bottoms[0] = Math.Min(Math.Max(RowOf(seriesValues[0].value), tops[0]), X_AXIS_ROW - 1);
+                }
+                else if (seriesValues.Count > 0)
+                {
+                    float runningTotal = 0f;
+                    for (int si = 0; si < seriesValues.Count; si++)
+                    {
+                        runningTotal += Math.Abs(seriesValues[si].value);
+                        bottoms[si] = si == 0 ? zeroLineRow - 1 : tops[si - 1] - 1;
+                        tops[si] = Math.Min(RowOf(runningTotal), bottoms[si]);
+                    }
+                    int Rows(int si) => bottoms[si] - tops[si] + 1;
+                    for (int si = 1; si < seriesValues.Count; si++)
+                    {
+                        if (Rows(si - 1) >= Rows(si) && Rows(si - 1) >= 2) tops[si - 1]++;
+                        else if (Rows(si) >= 2) bottoms[si]--;
+                        else
+                            for (int sj = si; sj < seriesValues.Count; sj++) { tops[sj]--; bottoms[sj]--; }
+                    }
+                }
 
                 for (int si = 0; si < seriesValues.Count; si++)
                 {
                     var (seriesName, value, rowData) = seriesValues[si];
+                    int bottomRow = bottoms[si], topRow = Math.Max(yPixelMin, tops[si]);
+                    if (bottomRow < yPixelMin || topRow > bottomRow) continue;   // no room on the display
 
-                    // Calculate the height of this segment in pixel space
-                    // Map the value to pixel rows relative to the zero line
-                    int segmentPixelHeight = 0;
-                    if (yMax > yMin)
-                    {
-                        float pixelsPerUnit = (float)(yPixelMax - yPixelMin) / (yMax - yMin);
-                        segmentPixelHeight = Math.Max(1, Mathf.RoundToInt(Math.Abs(value) * pixelsPerUnit));
-                    }
-                    else
-                    {
-                        segmentPixelHeight = 1;
-                    }
+                    int fillPattern = BarTexture(spec, seriesName, fullStackOrder, opts.UseBarTextures);
+                    var barCoords = RTDDrawing.DrawBar(grid, col, topRow, bottomRow, barWidth, fillPattern);
 
-                    // Segment goes from currentTopRow upward (lower row numbers = higher on screen)
-                    int segStart;
-                    if (si > 0)
-                        segStart = currentTopRow - 2; // 1-pin gap between segments
-                    else
-                        segStart = currentTopRow; // No gap for first segment from zero-line
-
-                    int segEnd = segStart - segmentPixelHeight + 1;
-                    segEnd = Math.Max(yPixelMin, segEnd); // Clamp to top of chart area
-
-                    if (segEnd > segStart) continue; // Skip if no room
-
-                    // Draw the bar segment (always thick for stacked, dynamic width)
-                    int fillPattern = opts.UseBarTextures ? (si % BAR_FILL_PATTERN_COUNT) : BAR_FILL_SOLID;
-                    var barCoords = RTDDrawing.DrawBar(grid, col, segEnd, segStart, stackedBarWidth, fillPattern);
-
-                    // Create a ChartNode for this segment
+                    // Labels read x, series, value: "Q1, Software, 120 thousand dollars"
                     var dataNode = new ChartNode($"data-point-{globalNodeIndex}", "data-point");
+                    CopyLabelFields(dataNode.Values, spec, rowData, xField, yField, colorField);
                     dataNode.Values[xField] = rowData[xField];
+                    if (colorField != null) dataNode.Values[colorField] = seriesName;
                     dataNode.Values[yField] = rowData[yField];
                     CopyRowId(dataNode.Values, rowData);
-                    dataNode.Values[colorField] = seriesName;
                     dataNode.Series = seriesName;
                     dataNode.Visibility = true;
                     dataNode.Coordinates.AddRange(barCoords);
@@ -405,9 +438,6 @@ public static class VegaToRTDRenderer
 
                     nodes.Add(dataNode);
                     globalNodeIndex++;
-
-                    // Move the stacking cursor up past this segment (gap applied at next segment start)
-                    currentTopRow = segEnd;
                 }
             }
 
@@ -423,11 +453,11 @@ public static class VegaToRTDRenderer
 
                 foreach (var row in xGrouped[xKey])
                 {
-                    if (!row.ContainsKey(yField) || !row.ContainsKey(colorField)) continue;
+                    if (!row.ContainsKey(yField) || (colorField != null && !row.ContainsKey(colorField))) continue;
 
-                    string seriesVal = row[colorField].ToString();
+                    string seriesVal = colorField != null ? row[colorField].ToString() : "_default";
                     var dataNode = new ChartNode($"data-point-{globalNodeIndex}", "data-point");
-                    dataNode.Values[colorField] = seriesVal;
+                    if (colorField != null) dataNode.Values[colorField] = seriesVal;
                     dataNode.Values[xField] = row[xField];
                     dataNode.Values[yField] = row[yField];
                     CopyRowId(dataNode.Values, row);
@@ -440,6 +470,7 @@ public static class VegaToRTDRenderer
                     globalNodeIndex++;
                 }
             }
+            } // end if (!hideAllData)
         }
         else
         {
@@ -692,6 +723,9 @@ public static class VegaToRTDRenderer
                     bool isHiddenNode = isHiddenSeries || !inRangeFilter;
                     var dataNode = new ChartNode($"data-point-{globalNodeIndex}", isHiddenNode ? "data-hidden" : "data-point");
                     if (!isHiddenNode) CopyLabelFields(dataNode.Values, spec, row, xField, yField, colorField);
+                    // Labels read x, series, value ("February 2025, Memory, $190"); a scatterplot
+                    // point names its group before its two values.
+                    if (chartType != "point") dataNode.Values[xField] = row[xField];
                     if (!isHiddenNode && colorField != null) dataNode.Values[colorField] = seriesVal;
                     dataNode.Values[xField] = row[xField];
                     dataNode.Values[yField] = row[yField];
@@ -775,8 +809,7 @@ public static class VegaToRTDRenderer
         var (xPixelMin, xPixelMax, yPixelMin, yPixelMax) =
             (chartType == "point" && !spec.Encoding.X.IsCategorical())
                 ? GetChartPixelBounds()
-                : GetChartPixelBounds(windowSize,
-                    (chartType == "bar" && opts.UseThickBars) ? RTDLayout.CalculateBarWidth(windowSize) / 2 : 0);
+                : GetChartPixelBounds(windowSize);
 
         var (hideYAxis, hideXAxis) = GetAxisVisibility(opts);
         int zeroLineRow = DrawAxesAndTicks(grid, nodes, yMin, yMax, yTickValues, yField, xPixelMax, yPixelMin, yPixelMax, hideYAxis, hideXAxis);
@@ -784,113 +817,7 @@ public static class VegaToRTDRenderer
         // Draw data points and X-axis tick markers
         if (windowedData.Count > 0)
         {
-            if (chartType == "bar")
-            {
-                // Compute bar width and inset pixel range for thick bars
-                int singleBarWidth = opts.UseThickBars ? RTDLayout.CalculateBarWidth(windowSize) : 1;
-                int singleHalfBar = singleBarWidth / 2;
-                int singleBarXMin = xPixelMin + singleHalfBar;
-                int singleBarXMax = xPixelMax - singleHalfBar;
-
-                // Get X-axis tick values from Vega spec (if defined and numeric)
-                // Check for numeric tick values even if Type is ordinal/nominal,
-                // since some specs declare ordinal but provide numeric ticks
-                HashSet<float> tickValueSet = null;
-                if (spec.Encoding?.X != null)
-                {
-                    var xAxisTickValues = spec.Encoding?.X?.Axis?.GetNumericValues();
-                    if (xAxisTickValues != null && xAxisTickValues.Length > 0)
-                    {
-                        tickValueSet = new HashSet<float>(xAxisTickValues);
-                        AppLog.Detail(LogArea.Render, $"Using {xAxisTickValues.Length} X-axis ticks from spec: {string.Join(", ", xAxisTickValues)}");
-                    }
-                    else
-                    {
-                        AppLog.Detail(LogArea.Render, $"No numeric X-axis tick values in spec (Type={spec.Encoding.X.Type}) - will draw ticks at all data points");
-                    }
-                }
-
-                // First draw X-tick markers for all points in the X-window (before Y-filtering)
-                // This ensures Z+1 and Z+2 have the same X-ticks
-                int xTickIndex = 0;
-                foreach (var item in windowedData)
-                {
-                    var point = item.Data;
-                    int windowIndex = item.WindowIndex;
-
-                    // Calculate X position based on WindowIndex
-                    int col;
-                    if (windowSize > 1)
-                    {
-                        col = RTDLayout.MapIndexToPixel(windowIndex, windowSize, singleBarXMin, singleBarXMax);
-                    }
-                    else
-                    {
-                        col = xPixelMin + (xPixelMax - xPixelMin) / 2;
-                    }
-
-                    // Draw X-tick marker only if this point's X-value is in the tick values
-                    if (!hideXAxis && tickValueSet != null)
-                    {
-                        float xVal = RTDLayout.GetNumericValue(point[xField]);
-                        if (tickValueSet.Contains(xVal))
-                        {
-                            AddXAxisTick(grid, nodes, col, xVal, xField, ref xTickIndex);
-                            CopyRtdIndexBaseField(nodes[nodes.Count - 1].Values, xField, point);
-                        }
-                    }
-                    // If no tick values specified, draw ticks at evenly-spaced intervals (not all points)
-                    else
-                    {
-                        // Cap tick count to prevent solid blocks when there are many data points
-                        const int MAX_X_TICKS = 10;
-                        if (RTDLayout.ShouldDrawXTick(windowIndex, windowSize, MAX_X_TICKS))
-                        {
-                            AddXAxisTick(grid, nodes, col, point[xField], xField, ref xTickIndex);
-                            CopyRtdIndexBaseField(nodes[nodes.Count - 1].Values, xField, point);
-                        }
-                    }
-                }
-
-                // Then draw data points only for Y-filtered points
-                if (!hideAllData)
-                {
-                int dataPointIndex = 0;
-                foreach (var item in filteredData)
-                {
-                    var point = item.Data;
-                    int windowIndex = item.WindowIndex;
-                    int absoluteIndex = windowStart + windowIndex;
-                    bool inRangeFilterSingle = opts.RangeFilterStart < 0 ||
-                        (absoluteIndex >= opts.RangeFilterStart && absoluteIndex <= opts.RangeFilterEnd);
-                    if (!inRangeFilterSingle) continue;
-
-                    int col;
-                    if (windowSize > 1)
-                        col = RTDLayout.MapIndexToPixel(windowIndex, windowSize, singleBarXMin, singleBarXMax);
-                    else
-                        col = xPixelMin + (xPixelMax - xPixelMin) / 2;
-
-                    float yVal = RTDLayout.GetNumericValue(point[yField]);
-                    if (yVal < yMin || yVal > yMax) continue;
-
-                    int row = RTDLayout.MapValueToPixel(yVal, yMin, yMax, yPixelMax, yPixelMin);
-                    row = Math.Max(yPixelMin, Math.Min(yPixelMax, row));
-
-                    var dataNode = new ChartNode($"data-point-{dataPointIndex}", "data-point");
-                    dataNode.Values[xField] = point[xField];
-                    dataNode.Values[yField] = yVal;
-                    CopyRowId(dataNode.Values, point);
-
-                    var barCoords = RTDDrawing.DrawBar(grid, col, row, zeroLineRow, singleBarWidth);
-                    dataNode.Coordinates.AddRange(barCoords);
-
-                    nodes.Add(dataNode);
-                    dataPointIndex++;
-                }
-                } // end if (!hideAllData)
-            }
-            else if (!hideAllData)
+            if (!hideAllData)
             {
                 // Scatter plot: draw points within the window
                 foreach (var item in filteredData)
@@ -956,29 +883,7 @@ public static class VegaToRTDRenderer
                 int row = RTDLayout.MapValueToPixel(yVal, yMin, yMax, yPixelMax, yPixelMin);
                 row = Math.Max(yPixelMin, Math.Min(yPixelMax, row));
 
-                if (chartType == "bar")
-                {
-                    // Store all bar coordinates (matching DrawBar logic) for touch detection
-                    int zRow = RTDLayout.MapValueToPixel(0, yMin, yMax, yPixelMax, yPixelMin);
-                    zRow = Math.Max(yPixelMin, Math.Min(yPixelMax, zRow));
-                    int nodeBarWidth = opts.UseThickBars ? RTDLayout.CalculateBarWidth(windowSize) : 1;
-                    int halfW = nodeBarWidth / 2;
-                    int drawCol = col;
-                    if (nodeBarWidth > 1)
-                    {
-                        if (drawCol - halfW <= Y_AXIS_COL) drawCol = Y_AXIS_COL + halfW + 1;
-                        if (drawCol + halfW > CHART_MAX_COL) drawCol = CHART_MAX_COL - halfW;
-                    }
-                    int rMin = Math.Min(row, zRow);
-                    int rMax = Math.Max(row, zRow);
-                    for (int dc = -halfW; dc <= halfW; dc++)
-                        for (int br = rMin; br <= rMax; br++)
-                            dataNode.Coordinates.Add((drawCol + dc, br));
-                }
-                else
-                {
-                    dataNode.Coordinates.Add((col, row));
-                }
+                dataNode.Coordinates.Add((col, row));
             }
             // For hidden points, no coordinates (not rendered on grid)
 

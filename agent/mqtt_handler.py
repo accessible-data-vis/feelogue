@@ -15,7 +15,7 @@ from .postprocessing import split_into_chunks
 from .layer_overview import compute_facts, generate_layer_overview, template_layer_overview
 from .context import (update_dataframe_from_layer, get_current_config, reset_context_keep_messages,
                       get_generated_overview, set_generated_overview, held_stage, held_generation,
-                      advance_held, take_held, describe_pieces)
+                      advance_held, take_held, describe_pieces, set_chart_spec)
 from .graph import graph
 from .orchestrator import process_user_request, process_held_request
 from .config import (
@@ -84,6 +84,7 @@ def on_message(client, userdata, msg):
         patch = {
             "chart_type":  rtd_data.get("chart_type"),
             "data_name":   rtd_data.get("data_name"),
+            "display_marks": (rtd_data.get("rendered") or {}).get("series"),
         }
         # Only include image fields if present; otherwise they stay cleared by the
         # reset above until a chart_details message for this chart supplies one.
@@ -94,6 +95,7 @@ def on_message(client, userdata, msg):
             patch["image_format"] = image_format or "png"
 
         schema = rtd_data.get("schema") or {}
+        set_chart_spec(schema or None)
         encoding = schema.get("encoding") or {}
         patch["color_field"] = (encoding.get("color") or {}).get("field") or None
         trimmed = trim_schema_data(schema)

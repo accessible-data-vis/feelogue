@@ -137,8 +137,8 @@ public static class RTDDrawing
                 {
                     if (fillPattern == BAR_FILL_VERTICAL)
                         draw = (c - leftEdge) % 2 == 0;
-                    else if (fillPattern == BAR_FILL_HORIZONTAL)
-                        draw = (r - rMin) % 2 == 0;
+                    else if (fillPattern == BAR_FILL_HOLLOW)
+                        draw = false;
                     else if (fillPattern == BAR_FILL_CHECKERBOARD)
                         draw = (r + c) % 2 == 0;
                 }
@@ -265,48 +265,30 @@ public static class RTDDrawing
     }
 
     /// <summary>
-    /// Draws Y-axis tick markers with uniform pixel spacing and creates ChartNodes for each tick.
+    /// Draws Y-axis tick markers and creates ChartNodes for each tick. Ticks sit at their
+    /// values' rows, mapped as the data is, so a mark level with a tick has its value;
+    /// when the rows don't divide evenly the spacing varies by a pin.
     /// </summary>
     public static void DrawYAxisTicks(int[,] grid, List<ChartNode> nodes,
         List<float> yTickValues, string yField,
         float yMin, float yMax, int yPixelMin, int yPixelMax)
     {
         var filteredTicks = yTickValues.Where(t => t >= yMin && t <= yMax).ToList();
-        int numYTicks = filteredTicks.Count;
-        if (numYTicks > 1)
+        for (int i = 0; i < filteredTicks.Count; i++)
         {
-            int yRange = yPixelMax - yPixelMin;
-            int gap = yRange / (numYTicks - 1);
-            for (int i = 0; i < numYTicks; i++)
-            {
-                int row = yPixelMax - i * gap;
-                row = Math.Max(yPixelMin, Math.Min(yPixelMax, row));
-
-                // 1-pin stub left of the axis, matching the X ticks' 1-pin stub below theirs.
-                for (int c = Y_AXIS_COL - 1; c <= Y_AXIS_COL; c++)
-                {
-                    if (grid[row, c] != ZERO_MARKER)
-                        grid[row, c] = AXIS_MARKER;
-                }
-
-                var yTickNode = new ChartNode($"y-axis-tick-{i}", "y-axis-tick");
-                yTickNode.Coordinates.Add((Y_AXIS_COL, row));
-                yTickNode.Values[yField] = filteredTicks[i];
-                nodes.Add(yTickNode);
-            }
-        }
-        else if (numYTicks == 1)
-        {
-            int row = RTDLayout.MapValueToPixel(filteredTicks[0], yMin, yMax, yPixelMax, yPixelMin);
+            int row = RTDLayout.MapValueToPixel(filteredTicks[i], yMin, yMax, yPixelMax, yPixelMin);
             row = Math.Max(yPixelMin, Math.Min(yPixelMax, row));
+
+            // 1-pin stub left of the axis, matching the X ticks' 1-pin stub below theirs.
             for (int c = Y_AXIS_COL - 1; c <= Y_AXIS_COL; c++)
             {
                 if (grid[row, c] != ZERO_MARKER)
                     grid[row, c] = AXIS_MARKER;
             }
-            var yTickNode = new ChartNode($"y-axis-tick-0", "y-axis-tick");
+
+            var yTickNode = new ChartNode($"y-axis-tick-{i}", "y-axis-tick");
             yTickNode.Coordinates.Add((Y_AXIS_COL, row));
-            yTickNode.Values[yField] = filteredTicks[0];
+            yTickNode.Values[yField] = filteredTicks[i];
             nodes.Add(yTickNode);
         }
     }

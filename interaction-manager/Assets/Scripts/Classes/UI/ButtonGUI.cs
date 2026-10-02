@@ -219,8 +219,6 @@ public class ButtonGUI : MonoBehaviour, InterfaceButtonGUI
         }
     }
 
-    public void UpdateHighlightModes(string chartType) { }
-
     public void ToggleMqttModeFromButton()
     {
         _mqttManager.ToggleMQTTSource();

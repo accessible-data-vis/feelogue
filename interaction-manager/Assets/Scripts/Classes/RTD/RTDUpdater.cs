@@ -921,6 +921,11 @@ public class RTDUpdater : MonoBehaviour, InterfaceRTDUpdater
         _navigationController.SetChartType(chartType);
     }
 
+    public void SetAxisUnits(string xField, string xTitle, string yField, string yTitle)
+    {
+        _dataFormatter.SetAxisUnits(xField, xTitle, yField, yTitle);
+    }
+
     public void SetUseSeriesSymbols(bool value)
     {
         _highlightManager.SetUseSeriesSymbols(value);

@@ -8,7 +8,7 @@ using Newtonsoft.Json.Linq;
 
 /// <summary>
 /// Discovers chart files automatically by scanning the project structure.
-/// Each chart JSON must contain a top-level "metadata" block with dataName,
+/// Each chart JSON must contain a top-level "usermeta" block with dataName,
 /// chartType, and displayName. The filename itself is only an identifier.
 /// </summary>
 public class ChartDiscoveryService
@@ -82,10 +82,10 @@ public class ChartDiscoveryService
             return null;
         }
 
-        var metaToken = spec["metadata"];
+        var metaToken = spec["usermeta"];
         if (metaToken == null || metaToken.Type != JTokenType.Object)
         {
-            Debug.LogWarning($"Skipping {filename}: missing required 'metadata' block");
+            Debug.LogWarning($"Skipping {filename}: missing required 'usermeta' block");
             return null;
         }
 
@@ -102,7 +102,7 @@ public class ChartDiscoveryService
 
         if (!metadata.IsValid())
         {
-            Debug.LogWarning($"Skipping {filename}: metadata must include dataName, chartType, and displayName");
+            Debug.LogWarning($"Skipping {filename}: usermeta must include dataName, chartType, and displayName");
             return null;
         }
 
@@ -138,7 +138,7 @@ public class ChartDiscoveryService
     public List<DiscoveredChart> GetAllCharts() => _discoveredCharts;
 
     /// <summary>
-    /// Resolve preview PNG filename: explicit metadata.previewImage wins;
+    /// Resolve preview PNG filename: explicit usermeta.previewImage wins;
     /// otherwise fall back to the legacy chart-{chartType}-{dataName}[-{variant}]-new.png convention.
     /// </summary>
     private string ResolvePreviewImage(ChartMetadata metadata)

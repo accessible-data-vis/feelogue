@@ -299,6 +299,18 @@ public class RTDHighlightManager
         return _gestureConfig; // "left" or "right"
     }
 
+    /// <summary>
+    /// The overlay value that marks a bar: lower its infill, or, for a hollow segment with
+    /// no infill to remove, raise it so the segment fills solid.
+    /// </summary>
+    private sbyte BarInteriorMark(List<Vector2Int> pins)
+    {
+        var image = _bufferManager.BaseImage;
+        foreach (var p in pins)
+            if (image[p.y, p.x] != 0) return -1;
+        return 1;
+    }
+
     private List<Vector2Int> ResolveConfigPins(int x, int y, HighlightMarkShape shape)
     {
         switch (shape)
@@ -310,8 +322,11 @@ public class RTDHighlightManager
             }
             case HighlightMarkShape.BarInterior:
             {
+                // A segment too short for an interior changes as a whole.
                 var coords = RTDMarkHighlighter.GetBarCoords(x, y, _graphVisualizer);
-                return coords != null ? RTDMarkHighlighter.GetBarInterior(coords) : null;
+                if (coords == null) return null;
+                var interior = RTDMarkHighlighter.GetBarInterior(coords);
+                return interior.Count > 0 ? interior : coords;
             }
             case HighlightMarkShape.Box:
                 return GetBoxNeighbours(x, y);
@@ -371,6 +386,7 @@ public class RTDHighlightManager
                     var pins = ResolveConfigPins(coord.x, coord.y, cfg.Shape);
                     if (pins == null || pins.Count == 0)
                         pins = GetBoxNeighbours(coord.x, coord.y);
+                    sbyte pinValue = cfg.Shape == HighlightMarkShape.BarInterior ? BarInteriorMark(pins) : staticPinValue;
 
                     string key = $"Touch_{hand}_{coord.x}-{coord.y}";
                     Vector2Int? centerToLower = invertCenter ? coord : (Vector2Int?)null;
@@ -378,7 +394,7 @@ public class RTDHighlightManager
                     // The coroutine writes overlays synchronously (before its first yield)
                     // but skips the per-coroutine batch send; one combined send follows below.
                     var handle = _coroutineHost.StartCoroutine(
-                        ShowStaticPinsCoroutine(key, pins, effectiveDuration, centerToLower, staticPinValue,
+                        ShowStaticPinsCoroutine(key, pins, effectiveDuration, centerToLower, pinValue,
                                                 suppressInitialSend: true, useBatch: true));
                     _activeCoroutines[key] = handle;
                     TrackKeyForHand(hand, key);
@@ -415,12 +431,13 @@ public class RTDHighlightManager
                     var pins = ResolveConfigPins(coord.x, coord.y, cfg.Shape);
                     if (pins == null || pins.Count == 0)
                         pins = GetBoxNeighbours(coord.x, coord.y);
+                    sbyte pinValue = cfg.Shape == HighlightMarkShape.BarInterior ? BarInteriorMark(pins) : staticPinValue;
 
                     string key = $"Touch_{hand}_{coord.x}-{coord.y}";
                     Vector2Int? centerToLower = invertCenter ? coord : (Vector2Int?)null;
 
                     var handle = _coroutineHost.StartCoroutine(
-                        ShowStaticPinsCoroutine(key, pins, effectiveDuration, centerToLower, staticPinValue,
+                        ShowStaticPinsCoroutine(key, pins, effectiveDuration, centerToLower, pinValue,
                                                 suppressInitialSend: false, useBatch: false));
                     _activeCoroutines[key] = handle;
                     TrackKeyForHand(hand, key);
@@ -474,7 +491,7 @@ public class RTDHighlightManager
         // Normal: start "down" so first toggle → raised (+1).
         bool up = isBarInterior;
         sbyte overlayUp   = isBarInterior ? (sbyte)0  : (sbyte)1;
-        sbyte overlayDown = (sbyte)-1; // hollow for bar, lowered for normal
+        sbyte overlayDown = isBarInterior ? BarInteriorMark(pins) : (sbyte)-1;
 
         // Pre-compute the full pin list once (used for batch sends throughout).
         var allPins = new List<Vector2Int>(pins);
@@ -642,7 +659,8 @@ public class RTDHighlightManager
             {
                 string pulseKey = $"Touch_agent_{cx}-{cy}";
                 var coord = new Vector2Int(cx, cy);
-                var handle = _coroutineHost.StartCoroutine(PulseMarkCoroutine(pulseKey, coord, configPins, effectiveDuration));
+                var handle = _coroutineHost.StartCoroutine(PulseMarkCoroutine(pulseKey, coord, configPins, effectiveDuration,
+                    isBarInterior: cfg.Shape == HighlightMarkShape.BarInterior, useBatch: cfg.UseBatchSend));
                 _activeCoroutines[pulseKey] = handle;
                 TrackKeyForHand("agent", pulseKey);
                 yield break;
@@ -673,7 +691,8 @@ public class RTDHighlightManager
             _activeHighlightPoints[key] = affectedPts; // shared ref, so cleanup works at any point mid-animation
 
             // BarInterior and BarPerimeter lower pins; everything else raises them
-            sbyte pinValue = (cfg.Shape == HighlightMarkShape.BarInterior || cfg.Shape == HighlightMarkShape.BarPerimeter) ? (sbyte)-1 : (sbyte)1;
+            sbyte pinValue = cfg.Shape == HighlightMarkShape.BarInterior ? BarInteriorMark(configPins)
+                           : cfg.Shape == HighlightMarkShape.BarPerimeter ? (sbyte)-1 : (sbyte)1;
             bool usePinDelay = !isBarShape;
 
             foreach (var p in configPins)

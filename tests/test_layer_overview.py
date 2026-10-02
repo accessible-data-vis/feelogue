@@ -28,7 +28,7 @@ class TestComputeFacts:
         f = lo.compute_facts(spec("ramprice"), RAMPRICE_RENDERED)
         assert f["layer_keys"] == ["title", "x_axis", "y_axis", "Memory", "Storage", "GPU", "summary"]
         s = f["series"]
-        assert s["Memory"]["shape"] == "rose sharply, speeding up from June 2025"
+        assert s["Memory"]["shape"] == "rose sharply, faster after June 2025"
         assert s["Storage"]["shape"] == "rose steadily"
         assert s["GPU"]["shape"] == "stayed flat"
         assert [s[k]["symbol"] for k in ("Memory", "Storage", "GPU")] == ["plus", "cross", "arrow up"]
@@ -37,7 +37,7 @@ class TestComputeFacts:
 
     def test_meetings_found_with_what_follows(self):
         f = lo.compute_facts(spec("ramprice"), RAMPRICE_RENDERED)
-        assert f["crossings"] == [
+        assert f["summary"]["crossings"] == [
             {"series": ["Memory", "Storage"], "at": "August 2025", "value": "$360", "kind": "meet",
              "afterwards": "Memory pulls away from Storage"},
             {"series": ["Memory", "GPU"], "at": "December 2025", "value": "$850", "kind": "meet",
@@ -59,16 +59,25 @@ class TestComputeFacts:
         assert f["series"]["data"]["start"][1].startswith("$")
         assert f["series"]["data"]["symbol"] == "plus"
         assert f["title"] == "AAPL Intraday, May 6, 2026: close price, 16:00 to 22:00, line chart."
-        assert f["crossings"] == []
+        assert "crossings" not in f["summary"]
 
     def test_trend_judged_against_the_drawn_axis(self):
-        # A ~$3 move is 1% of the price but fills this chart's axis: not flat.
+        # A ~$3 move is 1% of the price but fills this chart's axis: not flat, and the
+        # dip at 17:00 is a real turn.
         f = lo.compute_facts(spec("aaplstock"), {"chart_type": "line"})
-        assert f["series"]["data"]["shape"] == "rose unevenly"
+        assert f["series"]["data"]["shape"] == "fell to a low of $284.87 at 17:00, then rose"
 
-    def test_percent_values(self):
+    def test_a_dip_in_the_middle_is_named(self):
         f = lo.compute_facts(spec("interestrates"), {"chart_type": "line"})
-        assert f["series"]["data"]["highest"] == ["2024", "4.35%"]
+        assert f["series"]["data"]["shape"] == "fell to a low of 0.13% in 2021, then rose"
+
+    def test_percent_values_and_a_peak_only_when_in_between(self):
+        f = lo.compute_facts(spec("interestrates"), {"chart_type": "line"})
+        d = f["series"]["data"]
+        assert d["peak"] == ["2024", "4.35%"] and "low" not in d       # the shape names the low
+        f = lo.compute_facts(chart("compiled-vl-productrevenue-bar-new.json"), {"chart_type": "bar"})
+        assert "peak" not in f["series"]["Software"] and "low" not in f["series"]["Software"]  # at its ends
+        assert f["series"]["Hardware"]["peak"] == ["Q3", "110 thousand dollars"]
 
     def test_bar_chart_of_categories_has_extremes_not_trends(self):
         bar = {"mark": "bar",
@@ -85,6 +94,101 @@ class TestComputeFacts:
 
     def test_no_inline_data(self):
         assert lo.compute_facts({"encoding": {"x": {"field": "a"}, "y": {"field": "b"}}}, None) is None
+
+
+def chart(filename):
+    """A chart from StreamingAssets with its authored text removed, as if it had none."""
+    spec = json.loads((ASSETS / filename).read_text())
+    spec.pop("overview", None)
+    return spec
+
+
+class TestLayerJobs:
+    """Each layer gets only its own facts; the summary's are what only the whole chart shows."""
+
+    def test_single_series_summary_gives_the_change_not_the_extremes_again(self):
+        f = lo.compute_facts(chart("compiled-vl-waterstorage-bar-new.json"), {"chart_type": "bar"})
+        assert f["series"]["data"]["shape"] == "rose to a peak of 97% in 2022, then fell"
+        assert f["summary"] == {
+            "change": {"direction": "higher", "by": "24 percentage points", "from": "2018", "to": "2024"},
+            "biggest_rise": {"by": "15 percentage points", "from": "2020", "to": "2021"},
+            "biggest_fall": {"by": "9 percentage points", "from": "2023", "to": "2024"},
+        }
+        summary = lo.template_layer_overview(f)["summary"]
+        assert "24 percentage points higher" in summary and "97%" not in summary
+
+    def test_stacked_bars_textures_stack_order_and_totals(self):
+        rendered = {"chart_type": "bar", "series": [
+            {"name": "Software", "texture": "solid"}, {"name": "Hardware", "texture": "checkerboard"},
+            {"name": "Services", "texture": "vertical stripes"}]}
+        f = lo.compute_facts(chart("compiled-vl-productrevenue-bar-new.json"), rendered)
+        assert f["series"]["Hardware"]["opener"] == "Shown with a checkerboard texture"
+        assert f["x"]["stack_order"] == ["Software", "Services", "Hardware"]
+        assert f["summary"] == {
+            "highest_total": ["Q4", "345 thousand dollars"], "lowest_total": ["Q1", "250 thousand dollars"],
+            "totals_shape": "rose steadily", "largest_series": "Software, the largest in every bar",
+        }
+        assert "stacks Software, then Services, then Hardware" in lo.template_layer_overview(f)["x_axis"]
+        assert f["title"] == ("Quarterly Revenue by Product Line: Software, Hardware and Services, "
+                              "Q1 to Q4, stacked bar chart.")
+
+    def test_scatterplot_groups_relationships_and_contrast(self):
+        f = lo.compute_facts(chart("compiled-vl-efficiencypower-scatter-new.json"), {"chart_type": "point"})
+        s = f["series"]
+        assert [s[g]["relationship"].split(",")[0] for g in ("EV", "Hybrid", "ICE")] == \
+            ["shows no clear pattern", "rises steadily", "rises steadily"]
+        assert s["Hybrid"]["relationship"] == ("rises steadily, from Toyota Prius (90 kW, 98 g/km) "
+                                               "to Honda CR-V Hybrid (235 kW, 171 g/km)")
+        assert s["EV"]["sits"] == "between 57 g/km and 113 g/km, from 145 kW to 510 kW"
+        assert "start" not in s["EV"]                    # no line-chart start and end
+        assert f["summary"] == {
+            "lowest_group": "EV", "highest_group": "ICE", "leftmost_group": "Hybrid", "rightmost_group": "EV",
+            "contrast": "Hybrid and ICE rise as power increases, but the chart as a whole shows no clear pattern",
+        }
+        assert (f["x"]["first"], f["x"]["last"]) == ("0 kW", "600 kW")
+        assert f["title"] == "Vehicle Power and CO2 Emissions: EV, Hybrid and ICE, multi-series scatterplot."
+
+    def test_title_leaves_out_a_measure_the_name_already_says(self):
+        f = lo.compute_facts(chart("compiled-vl-interestrates-line-new.json"), {"chart_type": "line"})
+        assert f["title"] == "Interest Rate, 2019 to 2025, line chart."
+
+    def test_categories_summary_gives_the_spread(self):
+        bar = {"mark": "bar",
+               "encoding": {"x": {"field": "device", "type": "nominal", "title": "Device"},
+                            "y": {"field": "users", "type": "quantitative", "title": "Users"}},
+               "data": {"values": [{"device": "Desktop", "users": 50}, {"device": "Mobile", "users": 120},
+                                   {"device": "Tablet", "users": 20}]}}
+        f = lo.compute_facts(bar, {"chart_type": "bar"})
+        assert f["summary"] == {"difference": {"highest": "Mobile", "lowest": "Tablet", "by": "100"}}
+
+
+class TestEdgeCases:
+    def test_point_marks_on_dates_or_categories_still_get_text(self):
+        for x_type, xs in (("nominal", ["A", "B", "C"]), ("temporal", ["2020-01-01", "2020-02-01", "2020-03-01"])):
+            rows = [{"x": x, "y": v} for x, v in zip(xs, [3, 1, 2])]
+            spec = _line(rows, x_type=x_type, color=False)
+            spec["mark"] = "point"
+            f = lo.compute_facts(spec, {"chart_type": "point"})
+            d = f["series"]["data"]
+            assert (d["highest"][1] if x_type == "nominal" else d["start"][1]) == "3"
+
+    def test_duplicate_points_without_names(self):
+        rows = [{"x": 1, "y": 2, "s": "A", "n": "p"}, {"x": 1, "y": 2, "s": "A"}, {"x": 3, "y": 4, "s": "A", "n": "q"}]
+        spec = _line(rows, x_type="quantitative")
+        spec["mark"] = "point"
+        spec["encoding"]["tooltip"] = [{"field": "n"}]
+        assert lo.compute_facts(spec, {"chart_type": "point"})["series"]["A"]["relationship"].endswith("to q (3, 4)")
+
+    def test_year_on_a_scatterplot_x_has_no_thousands_separator(self):
+        rows = [{"x": 2019, "y": 1}, {"x": 2020, "y": 3}, {"x": 2021, "y": 2}]
+        spec = _line(rows, x_type="quantitative", color=False)
+        spec["mark"] = "point"
+        f = lo.compute_facts(spec, {"chart_type": "point"})
+        assert (f["x"]["first"], f["x"]["last"]) == ("2019", "2021")
+
+    def test_no_values_means_no_text(self):
+        rows = [{"x": "2020-01-01", "y": None}, {"x": "2020-02-01", "y": None}]
+        assert lo.compute_facts(_line(rows, color=False), {"chart_type": "line"}) is None
 
 
 class _FakeResponse:

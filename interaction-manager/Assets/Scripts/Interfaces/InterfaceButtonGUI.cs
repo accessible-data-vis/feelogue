@@ -28,5 +28,4 @@ public interface InterfaceButtonGUI
     public void SetOverviewMode(bool on);
     public void ClearOverviewMode();
     public bool GetToggleMode();
-    public void UpdateHighlightModes(string chartType);
 }

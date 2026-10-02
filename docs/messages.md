@@ -25,10 +25,10 @@ held for this load (see below) run when the next `layer_data_update` arrives.
 
 | field | meaning |
 |---|---|
-| `chart_type` | the spec's `metadata.chartType` (`line`, `scatter`, ...) |
+| `chart_type` | the spec's `usermeta.chartType` (`line`, `scatter`, ...) |
 | `data_name` | the chart's data name |
 | `schema` | the Vega-Lite spec as loaded; its `overview` block, if any, is the authored presentation text |
-| `rendered` | what the display actually draws: `{chart_type, series: [{name, symbol}] or null, y_domain, y_ticks, points_shown, points_total}` |
+| `rendered` | what the display actually draws: `{chart_type, series, y_domain, y_ticks, points_shown, points_total}`; `series` is `[{name, symbol}]`, or `[{name, texture}]` for bars, or null |
 | `image_data`, `image_format` | *optional*: the chart's preview PNG, base64 |
 
 ### `layer_data_update` (`message_type`)

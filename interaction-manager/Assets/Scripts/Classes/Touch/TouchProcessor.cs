@@ -56,7 +56,14 @@ public class TouchProcessor : MonoBehaviour
             var n = matchingNodes[i];
             if (n.xy != null && n.xy.Length >= 2)
             {
-                pinList.Add(new Vector2Int(n.xy[0], n.xy[1]));
+                // A bar is scored at its pin nearest the touch, not at its corner.
+                var pin = new Vector2Int(n.xy[0], n.xy[1]);
+                if (n.barCoordinates != null && n.barCoordinates.Count > 1)
+                    pin = n.barCoordinates
+                        .Select(c => new Vector2Int(c.x, c.y))
+                        .OrderBy(p => (p - closestPoint).sqrMagnitude)
+                        .First();
+                pinList.Add(pin);
                 sourceIndex.Add(i);
             }
         }

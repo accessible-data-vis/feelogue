@@ -57,12 +57,25 @@ def test_agent_reads_a_chart_load(monkeypatch):
     patches = []
     monkeypatch.setattr(mh, "reset_context_keep_messages", lambda: None)
     monkeypatch.setattr(mh.graph, "update_state", lambda cfg, patch: patches.append(patch))
+    marks = [{"name": "SYD-MEL", "symbol": "plus"}, {"name": "SYD-BNE", "symbol": "cross"}]
     msg = {"rtd_data_for_agent": {"chart_type": "line", "data_name": "airfares",
                                   "schema": {"encoding": {"color": {"field": "route"}}, "overview": {"title": "T"}},
-                                  "rendered": {"chart_type": "line"}}}
+                                  "rendered": {"chart_type": "line", "series": marks}}}
     mh.on_message(None, None, type("M", (), {"payload": json.dumps(msg).encode()}))
     assert patches[-1]["data_name"] == "airfares" and patches[-1]["color_field"] == "route"
     assert patches[-1]["chart_overview"] == {"title": "T"}
+    assert patches[-1]["display_marks"] == marks
+
+
+def test_answers_know_how_each_series_is_drawn():
+    """So "which one is the checkerboard?" can be answered."""
+    from agent.prompts import get_data_query_system_prompt
+    bars = [{"name": "Software", "texture": "solid"}, {"name": "Hardware", "texture": "checkerboard"}]
+    prompt = get_data_query_system_prompt({}, display_marks=bars)
+    assert "Software: solid; Hardware: checkerboard" in prompt
+    assert "How the display draws" not in get_data_query_system_prompt({})
+    one = get_data_query_system_prompt({}, display_marks=[{"name": "data", "symbol": "plus"}])
+    assert "How the display draws" not in one          # one series needs no telling apart
 
 
 def test_agent_reads_layer_data(monkeypatch):

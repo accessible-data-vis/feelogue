@@ -1,0 +1,129 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "description": "Quarterly Revenue by Product Line - Stacked Bar Chart",
+  "width": 487,
+  "height": 364,
+  "data": {
+    "name": "source",
+    "values": [
+      {
+        "quarter": "Q1",
+        "revenue ($K)": 120,
+        "product": "Software"
+      },
+      {
+        "quarter": "Q1",
+        "revenue ($K)": 85,
+        "product": "Hardware"
+      },
+      {
+        "quarter": "Q1",
+        "revenue ($K)": 45,
+        "product": "Services"
+      },
+      {
+        "quarter": "Q2",
+        "revenue ($K)": 150,
+        "product": "Software"
+      },
+      {
+        "quarter": "Q2",
+        "revenue ($K)": 90,
+        "product": "Hardware"
+      },
+      {
+        "quarter": "Q2",
+        "revenue ($K)": 55,
+        "product": "Services"
+      },
+      {
+        "quarter": "Q3",
+        "revenue ($K)": 135,
+        "product": "Software"
+      },
+      {
+        "quarter": "Q3",
+        "revenue ($K)": 110,
+        "product": "Hardware"
+      },
+      {
+        "quarter": "Q3",
+        "revenue ($K)": 60,
+        "product": "Services"
+      },
+      {
+        "quarter": "Q4",
+        "revenue ($K)": 180,
+        "product": "Software"
+      },
+      {
+        "quarter": "Q4",
+        "revenue ($K)": 95,
+        "product": "Hardware"
+      },
+      {
+        "quarter": "Q4",
+        "revenue ($K)": 70,
+        "product": "Services"
+      }
+    ]
+  },
+  "mark": {
+    "type": "bar",
+    "tooltip": true
+  },
+  "encoding": {
+    "x": {
+      "field": "quarter",
+      "type": "ordinal",
+      "title": "Quarter",
+      "axis": {
+        "values": [
+          "Q1",
+          "Q2",
+          "Q3",
+          "Q4"
+        ]
+      }
+    },
+    "y": {
+      "field": "revenue ($K)",
+      "type": "quantitative",
+      "title": "Revenue ($K)",
+      "scale": {
+        "domain": [
+          0,
+          400
+        ]
+      },
+      "axis": {
+        "values": [
+          0,
+          50,
+          100,
+          150,
+          200,
+          250,
+          300,
+          350,
+          400
+        ]
+      }
+    },
+    "color": {
+      "field": "product",
+      "type": "nominal"
+    }
+  },
+  "config": {
+    "background": "white",
+    "view": {
+      "stroke": null
+    }
+  },
+  "usermeta": {
+    "dataName": "productrevenue",
+    "chartType": "bar",
+    "displayName": "Quarterly Revenue by Product Line - Stacked Bar Chart"
+  }
+}
