@@ -67,6 +67,17 @@ public static class BrailleTranslator
         [')'] = "⠐⠜"
     };
 
+    // UEB symbols that take two cells, for the built-in braille. Anything not in
+    // either table shows as a blank cell.
+    private static readonly Dictionary<char, byte[]> twoCellSymbols = new()
+    {
+        ['$'] = new byte[] { 0b00001000, 0b00001110 }, // 4, 2-3-4
+        ['%'] = new byte[] { 0b00101000, 0b00110100 }, // 4-6, 3-5-6
+        ['/'] = new byte[] { 0b00111000, 0b00001100 }, // 4-5-6, 3-4
+        ['('] = new byte[] { 0b00010000, 0b00100011 }, // 5, 1-2-6
+        [')'] = new byte[] { 0b00010000, 0b00011100 }, // 5, 3-4-5
+    };
+
     private static readonly Dictionary<char, byte> asciiBrailleToDotByte = new()
     {
         ['a'] = 0b00000001, // 1
@@ -198,20 +209,54 @@ public static class BrailleTranslator
         return result.ToString();
     }
 
+    // liblouis comes from Homebrew: /opt/homebrew on Apple silicon, /usr/local on Intel.
+    private static readonly string[] HomebrewPrefixes = { "/opt/homebrew", "/usr/local" };
+    private static bool _louSearched;
+    private static string _louPrefix;
+    private static bool _fallbackWarned;
+
+    /// <summary>The Homebrew prefix holding liblouis's lou_translate, or null when it isn't installed.</summary>
+    private static string LouPrefix
+    {
+        get
+        {
+            if (!_louSearched)
+            {
+                _louSearched = true;
+                _louPrefix = HomebrewPrefixes.FirstOrDefault(p => System.IO.File.Exists(p + "/bin/lou_translate"));
+            }
+            return _louPrefix;
+        }
+    }
+
+    private static ProcessStartInfo LouStartInfo(string table) => new ProcessStartInfo
+    {
+        FileName = LouPrefix + "/bin/lou_translate",
+        Arguments = table,
+        EnvironmentVariables = { ["LOUIS_TABLEPATH"] = LouPrefix + "/share/liblouis/tables" },
+        RedirectStandardInput  = true,
+        RedirectStandardOutput = true,
+        RedirectStandardError  = true,
+        UseShellExecute = false,
+        CreateNoWindow = true
+    };
+
+    // Said once per session: without liblouis the braille row still works, letter by letter.
+    private static void WarnFallback(string reason)
+    {
+        if (_fallbackWarned) return;
+        _fallbackWarned = true;
+        UnityEngine.Debug.LogWarning($"[Braille] {reason} Using the built-in letter-by-letter braille instead. Install liblouis with: brew install liblouis");
+    }
+
     private static string TranslateWithLou(string inputText)
     {
-        var psi = new ProcessStartInfo
+        if (LouPrefix == null)
         {
-            FileName = "/opt/homebrew/bin/lou_translate",
-            Arguments = "en-us-g1.ctb",
-            EnvironmentVariables = { ["LOUIS_TABLEPATH"] = "/opt/homebrew/share/liblouis/tables" },
-            RedirectStandardInput  = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError  = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-        using var process = Process.Start(psi);
+            WarnFallback("liblouis's lou_translate was not found in /opt/homebrew or /usr/local.");
+            return inputText.ToLowerInvariant();
+        }
+        using var process = Process.Start(LouStartInfo("en-us-g1.ctb"));
         process.StandardInput.WriteLine(inputText);
         process.StandardInput.Close();
         string output = process.StandardOutput.ReadToEnd();
@@ -226,7 +271,13 @@ public static class BrailleTranslator
         if (Mode == BrailleMode.LibLouisGrade1 || Mode == BrailleMode.LibLouisGrade2)
         {
             string table = Mode == BrailleMode.LibLouisGrade1 ? "en-ueb-g1.ctb" : "en-ueb-g2.ctb";
-            return TranslateViaLiblouis(text, table, cellsPerPage);
+            if (LouPrefix == null)
+                WarnFallback("liblouis's lou_translate was not found in /opt/homebrew or /usr/local.");
+            else
+            {
+                try { return TranslateViaLiblouis(text, table, cellsPerPage); }
+                catch (Exception e) { WarnFallback($"liblouis failed: {e.Message}."); }
+            }
         }
 
         // 1) break into "words" or runs of whitespace
@@ -317,6 +368,12 @@ public static class BrailleTranslator
                     bytes.Add(0x00);
                 used += 2;
             }
+            else if (twoCellSymbols.TryGetValue(c, out var cells))
+            {
+                if (used + cells.Length > maxCells) break;
+                bytes.AddRange(cells);
+                used += cells.Length;
+            }
             else // 3) everything else you already support
             {
                 if (used + 1 > maxCells) break;
@@ -344,20 +401,8 @@ public static class BrailleTranslator
     /// </summary>
     private static List<string> TranslateViaLiblouis(string text, string table, int cellsPerPage)
     {
-        var psi = new ProcessStartInfo
-        {
-            FileName = "/opt/homebrew/bin/lou_translate",
-            Arguments = table,
-            EnvironmentVariables = { ["LOUIS_TABLEPATH"] = "/opt/homebrew/share/liblouis/tables" },
-            RedirectStandardInput  = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError  = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-
         string brf;
-        using (var process = Process.Start(psi))
+        using (var process = Process.Start(LouStartInfo(table)))
         {
             process.StandardInput.WriteLine(text);
             process.StandardInput.Close();

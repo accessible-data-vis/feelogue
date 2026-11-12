@@ -32,7 +32,7 @@ public class VegaChartLoader : MonoBehaviour
     [SerializeField] private bool useBarTextures = false;
     [SerializeField] [Range(0, 2)] private int symbolClearance = 2;
     [SerializeField] private bool interleavedNavigation = false;
-    [SerializeField] private BrailleTranslator.BrailleMode brailleMode = BrailleTranslator.BrailleMode.RawDotBytes;
+    [SerializeField] private BrailleTranslator.BrailleMode brailleMode = BrailleTranslator.BrailleMode.LibLouisGrade2;
 
     [Header("Series Symbol Overrides")]
     [SerializeField] private RTDGridConstants.SymbolType seriesSymbol0 = RTDGridConstants.SymbolType.Diamond;
@@ -105,6 +105,8 @@ public class VegaChartLoader : MonoBehaviour
         _mqttManager = mqttManagerService as InterfaceMQTTManager ?? throw new InvalidOperationException("mqttManagerService not assigned!");
         _rtdUpdater = rtdUpdaterService as InterfaceRTDUpdater ?? throw new InvalidOperationException("rtdUpdaterService not assigned!");
         _graphVisualizer = graphVisualizerService as InterfaceGraphVisualizer ?? throw new InvalidOperationException("graphVisualizerService not assigned!");
+        // The scene's braille mode from the start, not only after an Inspector change.
+        BrailleTranslator.Mode = brailleMode;
 
         // Preview generator is optional (can be null)
         if (previewGeneratorService != null)
