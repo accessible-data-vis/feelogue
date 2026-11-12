@@ -203,6 +203,12 @@ def update_dataframe_from_layer(msg: dict) -> dict:
         "chart_type": chart_type,
         "active_layer": layer_name,
     }
+    # An axis hidden for a presentation layer sends no ticks; its last ones still
+    # describe the chart, and a new chart's load clears them.
+    for axis in ("x", "y"):
+        ticks = msg.get(f"{axis}_ticks")
+        if ticks:
+            metadata_patch[f"{axis}_ticks"] = list(ticks)
 
     graph.update_state(get_current_config(), metadata_patch)
 

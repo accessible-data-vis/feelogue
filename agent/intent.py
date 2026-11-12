@@ -44,7 +44,7 @@ def classify_query(user_query: str, messages: list = []) -> dict:
     valid_intents = {
         "load_chart", "chart_overview",
         "touch_interaction", "trend", "filter",
-        "data_analysis", "general_question",
+        "data_analysis", "user_help", "general_question",
     }
     raw_intents = result.get("intents", result.get("type", [{"type":"general_question", "query":user_query}]))
 

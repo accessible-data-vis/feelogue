@@ -44,6 +44,7 @@ OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_MODEL_CLASSIFIER = os.environ.get("OPENAI_MODEL_CLASSIFIER", OPENAI_MODEL)
 OPENAI_MODEL_ANALYSIS = os.environ.get("OPENAI_MODEL_ANALYSIS", OPENAI_MODEL)
 OPENAI_MODEL_IMAGE = os.environ.get("OPENAI_MODEL_IMAGE", OPENAI_MODEL)
+OPENAI_MODEL_USER_HELP = os.environ.get("OPENAI_MODEL_USER_HELP", OPENAI_MODEL)
 
 # =============================================================================
 # MQTT

@@ -9,6 +9,7 @@ the dependency to be visible.
   chart_overview.py         agent/layer_overview.py
   data_query.py             agent/data_query.py, agent/graph.py
   filtering.py              agent/filtering.py
+  user_help.py              agent/graph.py
   postprocessing.py         agent/postprocessing.py
   chunk_assignment.py       agent/postprocessing.py
   image_tool.py             agent/image_tool.py
@@ -39,6 +40,10 @@ from .filtering import (
     FILTER_EXTRACTION_SYSTEM_PROMPT,
     get_filter_extraction_prompt,
 )
+from .user_help import (
+    USER_HELP_SYSTEM_PROMPT,
+    get_user_help_prompt,
+)
 from .postprocessing import (
     get_combine_multi_intent_responses_prompt,
     get_rewrite_list_prompt,
@@ -67,6 +72,9 @@ __all__ = [
     # Filtering
     "FILTER_EXTRACTION_SYSTEM_PROMPT",
     "get_filter_extraction_prompt",
+    # User help
+    "USER_HELP_SYSTEM_PROMPT",
+    "get_user_help_prompt",
     # Post-processing
     "get_combine_multi_intent_responses_prompt",
     "get_rewrite_list_prompt",

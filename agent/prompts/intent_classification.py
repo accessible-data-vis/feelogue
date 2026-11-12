@@ -34,11 +34,13 @@ Return JSON with two fields:
 
    - touch_interaction: references something touched/highlighted on the chart
 
-   - data_analysis: comparisons, calculations, or statistics on the data -- including aggregates (avg/min/max), distributions (t-distribution, histogram), correlations, regressions, or any quantitative analysis ONLY for calculations that can be done using python pandas. Also questions that name a series by its colour ("the blue line"): the data step resolves the colour itself.
+   - data_analysis: comparisons, calculations, or statistics on the data -- including aggregates (avg/min/max), distributions (t-distribution, histogram), correlations, regressions, or any quantitative analysis ONLY for calculations that can be done using python pandas. Also questions that name a series by its colour ("the blue line"): the data step resolves the colour itself. Also requests to find or highlight something on the chart ("where is 2025?", "where's the peak?", "highlight the maximum", "highlight Sydney"): the answer says where it is and highlights it, without hiding anything.
 
    - trend: patterns, trends, or changes over time
 
-   - filter: show or hide whole data series on the current chart, including bringing a hidden series back (e.g. "filter everything apart from Storage", "hide GPU", "only show Memory", "show Memory again", "put GPU back", "show all the series again")
+   - filter: show or hide whole data series on the current chart, including bringing a hidden series back (e.g. "filter everything apart from Storage", "hide GPU", "only show Memory", "show Memory again", "put GPU back", "show all the series again"). Not for highlighting a series ("highlight Memory"): that is data_analysis.
+
+   - user_help: a question about Graphy itself, not about the chart or its data. The user manual is the only source for these, so route here whenever the user asks about: the Dot Pad's keys, what one does or which key does something ("what does function key 3 do?"); what a sound, signal or message means ("what does the blinking pin mean?", "why did it say that?"); answers in parts ("how do I hear the rest of the answer?", "why did it only read one sentence?"); talking to Graphy and selecting points (push to talk, being cut off, double tap, what "this" refers to); what Graphy can and cannot do ("what can you do?", "does it support pie charts?", "can it hide just one year?"); or setup and the screen controls ("the Dot Pad isn't responding"). The user is asking HOW something works or what it MEANS, not asking for it to be done: "hide GPU" is filter, "how do I hide a line?" is user_help. Questions about the current chart or its data ("what are the x-axis labels?", "which series are hidden?") are never user_help.
 
    - general_question: anything else, including general questions about how chart types work (e.g., "how do I read a bar chart?", "what is a scatterplot?"), and requests to move, enlarge, or otherwise change the chart's view (the view is fixed)
     Choose the MOST specific intent(s). If multiple apply, include all relevant intents, but avoid over-classifying.    

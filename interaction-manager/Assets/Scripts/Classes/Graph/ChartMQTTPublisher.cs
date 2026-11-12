@@ -109,7 +109,8 @@ public static class ChartMQTTPublisher
         string layerName,
         int windowStart, int windowSize,
         float windowYMin, float windowYMax,
-        HashSet<string> hiddenSeries = null)
+        HashSet<string> hiddenSeries = null,
+        List<object> xTicks = null, List<object> yTicks = null)
     {
         if (mqttManager == null)
         {
@@ -220,6 +221,9 @@ public static class ChartMQTTPublisher
         {
             messageDict["series_field"] = colorField;
         }
+        // The ticks as drawn, in id order: x left to right, y bottom to top.
+        if (xTicks != null) messageDict["x_ticks"] = xTicks;
+        if (yTicks != null) messageDict["y_ticks"] = yTicks;
 
         PublishChartMessage(mqttManager, messageDict, $"Published layer '{layerName}' data", "Failed to publish layer data");
     }

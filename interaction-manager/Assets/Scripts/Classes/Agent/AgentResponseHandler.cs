@@ -63,6 +63,15 @@ public class AgentResponseHandler : MonoBehaviour
     private void OnWakeWordDetected()
     {
         AppLog.Info(LogArea.Agent, "Detected Wake Word!");
+        StartListening();
+    }
+
+    /// <summary>
+    /// Listen for a question the way the wake word does (start tone, wake word paused,
+    /// end tone and pulse on the result). Also used by the on-screen speech button.
+    /// </summary>
+    public void StartListening()
+    {
         _rtdUpdater.CancelPendingPresentation();   // starting to ask counts as input
         _audioToneManager.PlayStartTone();
         _agentWakeWord.PauseWakeWord();
@@ -88,6 +97,13 @@ public class AgentResponseHandler : MonoBehaviour
         if (parsedTranscript == null)
         {
             UnityEngine.Debug.LogWarning("Failed to parse transcript JSON, aborting.");
+            HandleNothingHeard();
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(parsedTranscript["transcript"]?.ToString()))
+        {
+            HandleNothingHeard();
             return;
         }
 
@@ -97,7 +113,9 @@ public class AgentResponseHandler : MonoBehaviour
         if (_buttonGUI.GetWaitToneMode())
             _audioToneManager.LoopWaitTone();
 
-        if (fromWakeWord && !_speechToText.GetSkipStatus())
+        // Push to talk usually starts the pulse on release, but the transcript can
+        // arrive while the key is still held; starting it again is harmless.
+        if (!_speechToText.GetSkipStatus())
             BlinkCursor();
 
         string combinedMessageJson = ComposeCombinedMessage(parsedTranscript);
@@ -109,9 +127,11 @@ public class AgentResponseHandler : MonoBehaviour
             PublishAndReset(combinedMessageJson);
     }
 
+    // Cancelled means listening was stopped on purpose. An empty transcript is different:
+    // nobody spoke, or speech-to-text failed, and HandleNothingHeard says so.
     private bool IsTranscriptCancelled(string transcript)
     {
-        return string.IsNullOrWhiteSpace(transcript) || transcript == "cancelled transcript";
+        return transcript == "cancelled transcript";
     }
 
     private JObject ParseTranscript(string transcript)
@@ -155,6 +175,20 @@ public class AgentResponseHandler : MonoBehaviour
     {
         UnityEngine.Debug.LogWarning("Skipping further processing due to cancelled transcript.");
         _speechToText.SetSkipStatus(false);
+        _rtdUpdater.StopAgentHighlights();
+    }
+
+    /// <summary>
+    /// Listening ended without a usable transcript, so no reply will stop the thinking
+    /// pulse started on release. Stop it and say so.
+    /// </summary>
+    private void HandleNothingHeard()
+    {
+        UnityEngine.Debug.LogWarning("No speech recognised; asking the user to try again.");
+        _speechToText.SetSkipStatus(false);
+        _rtdUpdater.StopAgentHighlights();
+        _rtdUpdater.DisplayBrailleLabel(FALLBACK_SPEECH);
+        _textToSpeech.ConvertTextToSpeech(FALLBACK_SPEECH, speechSettings, null);
     }
 
     private void OnRecognitionComplete()
@@ -489,6 +523,12 @@ public class AgentResponseHandler : MonoBehaviour
             .Where(nc => nc != null && nc.type == "data-point" && nc.visibility
                          && nc.values != null && nc.xy != null && nc.xy.Length == 2)
             .ToList();
+        // Axis ticks the answer names come by tick id (x-axis-tick-2).
+        var tickPins = _graphVisualizer.GetNodes().Values
+            .Select(go => go != null ? go.GetComponent<NodeComponent>() : null)
+            .Where(nc => nc != null && nc.type != null && nc.type.Contains("axis-tick") && nc.visibility
+                         && nc.xy != null && nc.xy.Length == 2)
+            .ToList();
         var matchedCoords = new List<Vector2Int>();
 
         foreach (var node in nodes)
@@ -514,11 +554,13 @@ public class AgentResponseHandler : MonoBehaviour
                 }
             }
 
-            // Match by row id when there is one, otherwise by value.
+            // Match a tick by its id, a point by its row id, otherwise by value.
             string id = nodeObj["id"]?.ToString();
-            var hits = !string.IsNullOrEmpty(id)
-                ? dataPins.Where(nc => nc.values.TryGetValue(VegaChartLoader.RowIdField, out var v) && v?.ToString() == id).ToList()
-                : dataPins.Where(nc => MatchesNodeValues(nc, nodeObj)).ToList();
+            var hits = string.IsNullOrEmpty(id)
+                ? dataPins.Where(nc => MatchesNodeValues(nc, nodeObj)).ToList()
+                : id.Contains("axis-tick-")
+                    ? tickPins.Where(nc => nc.id == id).ToList()
+                    : dataPins.Where(nc => nc.values.TryGetValue(VegaChartLoader.RowIdField, out var v) && v?.ToString() == id).ToList();
 
             if (hits.Count == 0)
             {

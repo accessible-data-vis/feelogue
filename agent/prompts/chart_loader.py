@@ -19,7 +19,10 @@ def get_load_chart_system_prompt() -> str:
         "- If nothing matches, return an empty list.\n\n"
         "You may also be given the currently loaded chart and recent conversation history. "
         "Use these to resolve relative or ambiguous references such as 'the previous one' or 'something similar'.\n\n"
-        "Return JSON in the format: {\"matches\": [{\"chart_id\": <int>, \"chart_name\": <str>}, ...]}\n"
+        "Also return `requested`: the chart the user asked for, as heard, without the loading verb "
+        "('interest rats' from 'load the interest rats chart'). Keep the user's words even if misheard: "
+        "it is read back to them when nothing matches.\n\n"
+        "Return JSON in the format: {\"matches\": [{\"chart_id\": <int>, \"chart_name\": <str>}, ...], \"requested\": <str>}\n"
         "No explanation. No additional text."
     )
 
@@ -49,6 +52,7 @@ def get_load_chart_prompt(charts: list, query: str, messages:list[dict]) -> str:
     - "chart_id": the integer ID of the chart
     - "chart_name": the name of the chart
     Order by relevance (best match first). Return an empty list if nothing matches.
+    - "requested": the chart the user asked for, as heard, without the loading verb
 
     Here is some message history that might help to resolve the query:
     {message_history}

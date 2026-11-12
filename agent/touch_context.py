@@ -53,7 +53,7 @@ def collect_touch_nodes(touchdata: dict) -> Tuple[List[Tuple[float, str]], Dict]
                 continue
 
             # Categorize node type
-            if "data-mark" in node_id:
+            if "data-point" in node_id or "data-mark" in node_id:
                 t = "Data Value"
             elif "x-axis" in node_id:
                 t = "X-Axis Markup"
@@ -94,7 +94,7 @@ def collect_highlight_nodes(highlighted_context: dict) -> Tuple[List[Tuple[float
         if float(node.get("probability", 0) or 0) < TOUCH_PROBABILITY_THRESHOLD:
             continue
 
-        if "data-mark" in node_id:
+        if "data-point" in node_id or "data-mark" in node_id:
             t = "Data Value"
         elif "x-axis" in node_id:
             t = "X-Axis Markup"

@@ -29,6 +29,8 @@ A single sentence may mention more than one data point -- assign every id that f
 same sentence. Use null only for a point the answer as a whole is about rather than any one
 sentence: a null point stays highlighted for the whole answer, so null is never a safe default
 for a point you could not place.
+An id starting with "series:" stands for a WHOLE series: assign it to the sentence about that
+series as a whole (its trend, its overall shape), not to one that only names its peak or low.
 
 Return an "assignments" array with exactly one entry per id listed above, using the ids
 EXACTLY as they appear -- copy them character-for-character."""

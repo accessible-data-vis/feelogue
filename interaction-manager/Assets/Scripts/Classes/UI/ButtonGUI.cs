@@ -32,6 +32,7 @@ public class ButtonGUI : MonoBehaviour, InterfaceButtonGUI
     [SerializeField] private Button stopAudioButton;
     [SerializeField] private Button clearRTDButton;
     [SerializeField] private Button fillRTDButton;
+    [SerializeField] private Button speechToTextButton;   // optional: ask a question without the Dot Pad
 
     // system controls - buttons with text input
     [SerializeField] private Button toggleMQTTButton;
@@ -134,6 +135,8 @@ public class ButtonGUI : MonoBehaviour, InterfaceButtonGUI
         stopAudioButton.onClick.AddListener(StopAudio);
         clearRTDButton.onClick.AddListener(ClearScreen);
         fillRTDButton.onClick.AddListener(FillScreen);
+        if (speechToTextButton != null)
+            speechToTextButton.onClick.AddListener(() => _agentResponseHandler.StartListening());
 
         // Toggle buttons & labels
         toggleMQTTButton.onClick.AddListener(ToggleMqttModeFromButton);
