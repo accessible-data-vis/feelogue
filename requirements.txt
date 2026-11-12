@@ -52,3 +52,5 @@ six==1.17.0
 soupsieve==2.6
 typing_extensions==4.12.2
 urllib3==2.3.0
+websockets==16.1.1  # speech-to-text (OpenAI Realtime API)
+openwakeword==0.6.0  # wake word listener (runs on onnxruntime, pulled in as a dependency)

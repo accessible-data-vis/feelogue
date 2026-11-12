@@ -88,6 +88,10 @@ public class VegaChartLoader : MonoBehaviour
     // Y-axis windowing (value-based)
     private float _windowYMin = 0f;      // Current Y-window minimum
     private float _windowYMax = 5f;      // Current Y-window maximum
+    // The axis ticks as last drawn, in the order of their ids (x-axis-tick-0, ...), so
+    // the agent can name a tick and highlight it.
+    private List<object> _drawnXTicks = new List<object>();
+    private List<object> _drawnYTicks = new List<object>();
 
     // Data range tracking
     private float _dataYMin = 0f;        // Full dataset Y minimum
@@ -363,6 +367,8 @@ public class VegaChartLoader : MonoBehaviour
                 RangeFilterEnd = rangeFilterEnd
             };
             var (grid, nodes) = VegaToRTDRenderer.Generate(_currentVegaSpec, _windowStart, _windowSize, _windowYMin, _windowYMax, opts);
+            _drawnXTicks = TickValues(nodes, "x-axis-tick");
+            _drawnYTicks = TickValues(nodes, "y-axis-tick");
 
             AppLog.Detail(LogArea.Render, $"Generated {grid.GetLength(0)}x{grid.GetLength(1)} RTD grid with {nodes.Count} nodes");
 
@@ -440,7 +446,8 @@ public class VegaChartLoader : MonoBehaviour
             // gets the whole chart. A filter does limit what it sees.
             var hiddenForAgent = _presentationActive ? null
                 : (hiddenSeries.Count > 0 ? new HashSet<string>(hiddenSeries) : null);
-            ChartMQTTPublisher.PublishCurrentLayerData(_mqttManager, _currentVegaSpec, publishMarkType, _windowStart, _windowSize, _windowYMin, _windowYMax, hiddenForAgent);
+            ChartMQTTPublisher.PublishCurrentLayerData(_mqttManager, _currentVegaSpec, publishMarkType, _windowStart, _windowSize, _windowYMin, _windowYMax, hiddenForAgent,
+                _drawnXTicks, _drawnYTicks);
             _hiddenSeriesPublishedKey = currentHiddenKey;
         }
         catch (Exception ex)
@@ -1005,6 +1012,24 @@ public class VegaChartLoader : MonoBehaviour
             config.UseBatchSend = true;
         }
         return config;
+    }
+
+    /// <summary>
+    /// The value of each tick of one axis, in node order, which is the order of the
+    /// tick ids. Dates as yyyy-MM-dd, the form the agent's data uses.
+    /// </summary>
+    private static List<object> TickValues(List<ChartNode> nodes, string tickType)
+    {
+        return nodes
+            .Where(n => n.Type == tickType && n.Values.Count > 0)
+            .Select(n =>
+            {
+                object v = n.Values.Values.First();
+                return v is DateTime dt
+                    ? dt.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)
+                    : v;
+            })
+            .ToList();
     }
 
     /// <summary>

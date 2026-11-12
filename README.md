@@ -39,10 +39,9 @@ How to add a chart, and how the agent writes its presentation text, is in [docs/
 - Unity 2022.3 LTS or later
 - Ultraleap Hyperion — must be running before launching the Interaction Manager
 - Python 3.10+
-- Google Cloud project with Speech-to-Text and Text-to-Speech APIs enabled
-- Picovoice Porcupine access key (free tier at console.picovoice.ai)
+- Google Cloud project with the Text-to-Speech API enabled
 - MQTT broker: a local [Mosquitto](https://mosquitto.org) on `localhost:1883` (the default), or a remote broker (tested with HiveMQ Cloud free tier)
-- OpenAI API key
+- OpenAI API key (used by the agent and for speech-to-text)
 
 ## Setup
 
@@ -65,19 +64,20 @@ ls /dev/tty.*
 ```bash
 python3 -m venv venv
 venv/bin/pip install -r requirements.txt
+venv/bin/python -c "import openwakeword.utils as u; u.download_models()"
 ```
+
+The last line downloads openWakeWord's shared models once (needs internet).
 
 **3. Add credential files to `interaction-manager` folder**
 
 - `key-service-account-google.json` — Google Cloud service account key
-- `key-porcupine.json` — Porcupine access key and wake word path:
-  ```json
-  {
-    "access_key": "your-key-here",
-    "keyword_path": "your-wake-word.ppn"
-  }
-  ```
-  Train and download a custom wake word `.ppn` file at [console.picovoice.ai](https://console.picovoice.ai), then place it in `interaction-manager/`.
+
+**Wake word.** Saying "Hey Graphy" starts a question without holding F1. The wake word runs on [openWakeWord](https://github.com/dscripka/openWakeWord) in a background Python process that Unity starts at Play. To change it, set `Wake Word Model` on the `AgentWakeWord` component in the Inspector:
+- a trained `.onnx` model placed in `interaction-manager/Assets/StreamingAssets/keyword_files/`, entered as `keyword_files/your_model.onnx`
+- a pre-trained openWakeWord model name, such as `hey_jarvis` or `alexa` (these models are licensed CC BY-NC-SA 4.0, non-commercial use only)
+
+**Speech-to-text.** Questions are transcribed by OpenAI (`gpt-transcribe` over the Realtime API) with `OPENAI_API_KEY` from `.env`. Set `OPENAI_TRANSCRIBE_MODEL` in `.env` to use another model. To use Google Speech-to-Text instead, set `Stt Script` on the `SpeechToText` component to `google_cloud_speechtotext_v1.py` and enable the Speech-to-Text API in your Google Cloud project.
 
 **4. Add charts**
 
@@ -103,4 +103,4 @@ Run the agent's tests with `python -m pytest tests/`. They need no `.env` or API
 
 **7. Run the Interaction Manager**
 
-Ensure the Dot Pad is connected via USB and Ultraleap Hyperion is running, then press **Play** in the Unity Editor. Select a chart from the dropdown in the Game View to load it onto the RTD, or say your trained wake word followed by a load command such as *"load the interest rates chart"*.
+Ensure the Dot Pad is connected via USB and Ultraleap Hyperion is running, then press **Play** in the Unity Editor. Select a chart from the dropdown in the Game View to load it onto the RTD, or say "Hey Graphy" followed by a load command such as *"load the interest rates chart"*.

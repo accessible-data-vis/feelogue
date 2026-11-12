@@ -120,3 +120,10 @@ def test_each_round_extends_the_previous_request(monkeypatch):
     first, second = _run(monkeypatch, {}, tool_rounds=1)
     assert [m.content for m in second[:len(first)]] == [m.content for m in first]
     assert "Iterations remaining" in second[-1].content          # budget on the last message
+
+
+def test_a_touched_point_is_labelled_a_data_value():
+    touch = {"left_touch": {"touch_timestamp": 1, "nodes": {
+        "data-point-4": {"probability": 1.0, "node_values": {"year": 2021, "rate": 0.13}}}}}
+    info, _ = tc.collect_touch_nodes(touch)
+    assert "Data Value" in info[0][1] and "Unknown" not in info[0][1]

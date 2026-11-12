@@ -831,6 +831,11 @@ public class RTDHighlightManager
 
         try
         {
+            // Shared ref: a clear while the pulse runs (a reply arriving, F2) lowers these
+            // pins. Without it the pulse stopped wherever it was, often with the pin up.
+            var pulsePts = new List<Vector2Int>(coords);
+            _activeHighlightPoints[routineKey] = pulsePts;
+
             var isoPrev = new Dictionary<Vector2Int, sbyte>();
             if (_buttonGUI.GetLocalIsolationMode())
             {
@@ -842,6 +847,7 @@ public class RTDHighlightManager
                         var p = kv.Key;
                         if (!isoPrev.ContainsKey(p))
                         {
+                            pulsePts.Add(p);
                             isoPrev[p] = _bufferManager.Overlay[p.y, p.x];
                             OnSetOverlay?.Invoke(p.y, p.x, -1);
                             yield return new WaitForSeconds(ISOLATION_PIN_DELAY);
@@ -873,6 +879,8 @@ public class RTDHighlightManager
                 _bufferManager.Overlay[kv.Key.y, kv.Key.x] = kv.Value;
                 OnRefreshCell?.Invoke(kv.Key.y, kv.Key.x);
             }
+            // Ran its course and restored the pins itself: nothing left for a clear to do.
+            _activeHighlightPoints.Remove(routineKey);
         }
         finally
         {

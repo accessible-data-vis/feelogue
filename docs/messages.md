@@ -42,6 +42,7 @@ Sent after a load and on every redraw. Replaces the agent's data frame.
 | `series_field` | *optional*: the colour field on multi-series charts |
 | `data_count` | number of rows |
 | `data` | every row with all its fields, plotted or not (a scatterplot point's name, say), plus `_id` (row id) and `in_view` (drawn on the display now) |
+| `x_ticks`, `y_ticks` | the axis ticks as drawn, in tick-id order (`x-axis-tick-0` first): x left to right, y bottom to top. Empty for an axis a presentation layer hides; the agent keeps the last ticks it had |
 
 While the presentation runs, `in_view` ignores the series it isolates: the agent
 sees the whole chart.
@@ -71,7 +72,7 @@ held for a load.
 | `chunks` | the reply split into sentences, played one at a time; a follow-up question is always one chunk |
 | `followup_stage` | `true` when the reply asks the user something back (Unity opens the mic after it) |
 | `message_id` | unique per publish |
-| `nodes` | *optional*: points to highlight, `{"node_1": {id, x, y, <series field>, chunk}}`; `chunk` is the sentence index, missing means the whole reply |
+| `nodes` | *optional*: points to highlight, `{"node_1": {id, x, y, <series field>, chunk}}`; `chunk` is the sentence index, missing means the whole reply. An axis tick is `{id: "x-axis-tick-<i>", value, chunk}`, matched by its id. A whole series arrives as one node per point, each with `group: "series:<name>"` |
 | `rtd_command` | *optional*: `"<dataName>-<chartType>"` loads a chart; `{"filter": {"hidden_series": [...]}}` sets the complete filter |
 | `referents` | *optional*: which touch and navigation points the answer used |
 | `presentation` | *optional*: `"start"` starts the presentation after this reply is spoken; `"skip"` means this reply's load must not start it (the rest of the request follows) |

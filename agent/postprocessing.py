@@ -74,6 +74,11 @@ _SENTENCE_RE = re.compile(r"(?<=[a-zA-Z%][.?!])\s+(?=[A-Z(])|(?<=\d\.)\s+(?=[A-Z
 # Detects a leading list number at the start of a chunk, e.g. "6. "
 _LEADING_LIST_NUMBER_RE = re.compile(r"^\d+\.\s+")
 
+# A bare "Yes." / "No." chunk names nothing and costs the listener a beat. The
+# data-query prompt asks for "No, ..." but the model still writes "No. ..." often
+# enough that the splitter folds it into the chunk that follows.
+_BARE_YES_NO_RE = re.compile(r"^(?:yes|no)[.!]$", re.IGNORECASE)
+
 
 def split_into_chunks(text: str) -> list[str]:
     """
@@ -98,7 +103,14 @@ def split_into_chunks(text: str) -> list[str]:
         else:
             result.append(prefix + sentences[0])
             result.extend(sentences[1:])
-    return result
+
+    merged = []
+    for chunk in result:
+        if merged and _BARE_YES_NO_RE.match(merged[-1]):
+            merged[-1] = f"{merged[-1]} {chunk}"
+        else:
+            merged.append(chunk)
+    return merged
 
 
 # =============================================================================
@@ -108,12 +120,15 @@ def split_into_chunks(text: str) -> list[str]:
 _FALLBACK_DATA_QUERY_RESPONSE = {
     "message": "Sorry, something went wrong looking into that. Could you ask again?",
     "highlighted_ids": [],
+    "highlighted_series": [],
 }
+
+_TICK_ID_RE = re.compile(r"^([xy])-axis-tick-(\d+)$")
 
 
 def parse_data_query_response(raw: str) -> dict:
     """Parse the data-query loop's schema-conforming answer into
-    {"message": str, "highlighted_ids": list[str]}."""
+    {"message": str, "highlighted_ids": list[str], "highlighted_series": list[str]}."""
     return parse_llm_json(raw, fallback=dict(_FALLBACK_DATA_QUERY_RESPONSE))
 
 
@@ -132,6 +147,48 @@ def resolve_highlighted_nodes(highlighted_ids: list, df, x_col: str, y_col: str,
     return resolved
 
 
+def resolve_tick_nodes(highlighted_ids: list, x_ticks: list | None, y_ticks: list | None) -> dict:
+    """Resolve the answer's axis tick ids to wire nodes, keyed by id. Unity matches a
+    tick by its id; the value is there for chunk assignment. Ids past the drawn ticks
+    are dropped."""
+    ticks = {"x": list(x_ticks or []), "y": list(y_ticks or [])}
+    resolved = {}
+    for hid in highlighted_ids or []:
+        m = _TICK_ID_RE.match(str(hid))
+        if m and int(m.group(2)) < len(ticks[m.group(1)]):
+            resolved[str(hid)] = {"id": str(hid), "value": ticks[m.group(1)][int(m.group(2))]}
+    return resolved
+
+
+def series_point_ids(df, series: list, color_col: str | None) -> list[str]:
+    """`_id`s of every point of the named series that the display can show: hidden
+    series and points beyond the display left out. Unknown names match nothing."""
+    if not series or df is None or not color_col or color_col not in df.columns or "_id" not in df.columns:
+        return []
+    rows = df[df[color_col].astype(str).isin({str(s) for s in series})]
+    if "hidden_by_filter" in rows.columns:
+        rows = rows[~rows["hidden_by_filter"].astype(bool)]
+    if "in_view" in rows.columns:
+        rows = rows[rows["in_view"].astype(bool)]
+    return list(rows["_id"].astype(str).unique())
+
+
+def resolve_highlighted_series(series: list, df, x_col: str, y_col: str,
+                               color_col: str | None = None) -> dict:
+    """Resolve the answer's `highlighted_series` names to wire nodes, one per point.
+    Keys are namespaced `series:<name>/<id>` so a point the answer also names on its
+    own (the peak) keeps its own entry and chunk; Unity matches on the node's `id`,
+    not the key. Every node carries `group`, so assign_nodes_to_chunks places the
+    whole series as one item."""
+    resolved = {}
+    for name in dict.fromkeys(str(s) for s in series or []):
+        group = f"series:{name}"
+        ids = series_point_ids(df, [name], color_col)
+        for key, node in resolve_highlighted_nodes(ids, df, x_col, y_col, color_col).items():
+            resolved[f"{group}/{key}"] = {**node, "group": group}
+    return resolved
+
+
 def node_from_row(row, df, x_col: str, y_col: str, color_col: str | None) -> dict:
     """Wire node from a df row: id + x/y (+ series)."""
     node = {}
@@ -145,13 +202,24 @@ def node_from_row(row, df, x_col: str, y_col: str, color_col: str | None) -> dic
 
 def assign_nodes_to_chunks(nodes: dict, chunks: list[str]) -> dict:
     """Merge a "chunk" index onto each node: the spoken sentence that references it.
-    Unassigned or invalid entries are left without one (they blink throughout)."""
+    Unassigned or invalid entries are left without one (they blink throughout).
+    Nodes sharing a `group` (a whole series, see resolve_highlighted_series) are asked
+    about as one entry keyed by the group, and its chunk is copied onto every member:
+    a series lights up together, and a long one doesn't fill the prompt."""
     if not nodes or not chunks:
         return nodes
+    members, prompt_nodes = {}, {}
+    for nid, n in nodes.items():
+        group = n.get("group")
+        if group:
+            members.setdefault(group, []).append(nid)
+            prompt_nodes[group] = {"whole_series": group.removeprefix("series:")}
+        else:
+            prompt_nodes[nid] = n
     try:
         resp = client.chat.completions.create(
             model=OPENAI_MODEL,
-            messages=[{"role": "user", "content": get_chunk_assignment_prompt(chunks, nodes)}],
+            messages=[{"role": "user", "content": get_chunk_assignment_prompt(chunks, prompt_nodes)}],
             temperature=0,
             response_format={
                 "type": "json_schema",
@@ -169,8 +237,11 @@ def assign_nodes_to_chunks(nodes: dict, chunks: list[str]) -> dict:
         if not isinstance(item, dict):
             continue
         nid, idx = item.get("id"), item.get("chunk")
-        if nid in result and isinstance(idx, int) and 0 <= idx < len(chunks):
-            result[nid]["chunk"] = idx
+        if not (isinstance(idx, int) and 0 <= idx < len(chunks)):
+            continue
+        for member in members.get(nid, [nid]):
+            if member in result:
+                result[member]["chunk"] = idx
     return result
 
 

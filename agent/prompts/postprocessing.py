@@ -24,7 +24,8 @@ def get_combine_multi_intent_responses_prompt(responses: dict[str, str], query: 
 
     Rules:
     - Frontload the information that directly answers the query; supporting detail comes after.
-    - Be concise and avoid repetition across parts.
+    - Be concise and avoid repeating the same fact across parts.
+    - Keep each part's brief naming of what was asked ("Memory's average", "GPU hidden"). The query was transcribed from speech and may be wrong, and this naming is how the user catches a mishearing, so it is not repetition.
     - Plain English only: no markdown, no bullet points, no surrounding quotes.
     - Do not add, remove, or alter any factual information. Restructure and merge only.
     - If only one response part is given, just clean it up; do not pad it.

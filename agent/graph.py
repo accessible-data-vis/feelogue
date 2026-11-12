@@ -10,7 +10,8 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 
-from .config import OPENAI_MODEL_ANALYSIS
+from .client import client
+from .config import OPENAI_MODEL_ANALYSIS, OPENAI_MODEL_USER_HELP
 from .state import AgentState
 from .data_query import csv_query_tool
 from .image_tool import chart_image_tool
@@ -18,11 +19,15 @@ from .intent import classify_query
 from .prompts import (
     get_data_query_scope,
     get_data_query_system_prompt,
+    USER_HELP_SYSTEM_PROMPT,
+    get_user_help_prompt,
 )
 from .chart_loader import analyze_user_intent_with_context
 from .postprocessing import (
     parse_data_query_response,
     resolve_highlighted_nodes,
+    resolve_highlighted_series,
+    resolve_tick_nodes,
     assign_nodes_to_chunks,
     rewrite_long_node_lists_with_gpt,
     combine_multi_intent_responses,
@@ -30,7 +35,7 @@ from .postprocessing import (
 )
 from .touch_context import collect_touch_nodes, collect_highlight_nodes
 from .utils import strip_markdown
-from .context import (get_df, frame_for_questions, hold_pieces, held_pieces, held_stage,
+from .context import (get_df, get_chart_spec, frame_for_questions, hold_pieces, held_pieces, held_stage,
                       take_held, describe_pieces)
 from .schema import DATA_QUERY_SCHEMA
 from .filtering import handle_filter_request
@@ -115,6 +120,8 @@ def _run_tool_loop(state: AgentState , enriched_query:str, max_iterations: int =
         df=df,
         vega_lite_schema=state.get("vega_lite_schema"),
         display_marks=state.get("display_marks"),
+        x_ticks=state.get("x_ticks"),
+        y_ticks=state.get("y_ticks"),
     ))
     scope = get_data_query_scope(df, state.get("hidden_series"), state.get("presentation"))
     context_messages = [SystemMessage(content="**Data Scope**:\n" + scope)] if scope else []
@@ -269,6 +276,7 @@ _INTENT_NODE_MAP = {
     "load_chart":     "load_chart_node",
     "chart_overview": "chart_overview_node",
     "filter":         "filter_node",
+    "user_help":      "user_help_node",
 }
 
 
@@ -402,6 +410,65 @@ def chart_overview_node(state: AgentState) -> dict:
 
 
 # =============================================================================
+# Node: user_help_node
+# =============================================================================
+
+_CHART_TYPE_NAMES = {"line": "line chart", "bar": "bar chart", "point": "scatterplot"}
+
+
+def _user_help_chart_facts(state: AgentState) -> dict | None:
+    """What user_help may know about the current chart, or None when none is loaded.
+    Axis labels are the spec's titles, not the raw field names (DATE, CLOSE), and
+    series are listed only for a chart with several, by the names the display uses."""
+    if not (state.get("chart_type") or state.get("data_name")):
+        return None
+    chart_type = state.get("chart_type")
+    color_field = state.get("color_field")
+    enc = (get_chart_spec() or {}).get("encoding") or {}
+    series = []
+    if color_field:
+        series = [str(m["name"]) for m in (state.get("display_marks") or [])
+                  if isinstance(m, dict) and m.get("name") is not None]
+        df = get_df()
+        if not series and df is not None and color_field in df.columns:
+            series = [str(s) for s in dict.fromkeys(df[color_field].dropna())]
+    if chart_type == "bar" and series:
+        kind = "stacked bar chart"
+    else:
+        kind = _CHART_TYPE_NAMES.get(chart_type, chart_type)
+    return {
+        "chart_type": kind,
+        "x_title": (enc.get("x") or {}).get("title"),
+        "y_title": (enc.get("y") or {}).get("title"),
+        "series": series,
+        "hidden_series": list(state.get("hidden_series") or []),
+    }
+
+
+def user_help_node(state: AgentState) -> dict:
+    """Answer a question about Graphy itself from the user manual."""
+    print(f"[user_help_node]")
+    query = state.get("current_query", "")
+    chart = _user_help_chart_facts(state)
+    try:
+        resp = client.chat.completions.create(
+            model=OPENAI_MODEL_USER_HELP,
+            messages=[
+                {"role": "system", "content": USER_HELP_SYSTEM_PROMPT},
+                {"role": "user", "content": get_user_help_prompt(
+                    query, messages=state.get("messages", []), chart=chart)},
+            ],
+            # No temperature: reasoning models accept only the default, and the
+            # except below would turn that into a failed answer on every question.
+        )
+        response = strip_markdown((resp.choices[0].message.content or "").strip())
+    except Exception as e:
+        print(f"Warning: user help fallback due to: {e}")
+        response = "Sorry, I couldn't answer that help question right now."
+    return {"intent_responses": {state["current_intent"]: response}, "followup_stage": False}
+
+
+# =============================================================================
 # Node: data_query_node
 # =============================================================================
 
@@ -461,9 +528,14 @@ def data_query_node(state: AgentState) -> dict:
 
     # Only ids in the live dataframe survive (the model can invent ids). Keyed by id so
     # several intents in one turn accumulate; post_process_node places them on sentences.
+    ids = result.get("highlighted_ids") or []
     resolved = resolve_highlighted_nodes(
-        result.get("highlighted_ids") or [], get_df(),
-        state.get("x_field"), state.get("y_field"), state.get("color_field"))
+        ids, get_df(), state.get("x_field"), state.get("y_field"), state.get("color_field"))
+    resolved.update(resolve_tick_nodes(ids, state.get("x_ticks"), state.get("y_ticks")))
+    # A whole series is named, not listed: expand it to its points here.
+    resolved.update(resolve_highlighted_series(
+        result.get("highlighted_series") or [], frame_for_questions(state),
+        state.get("x_field"), state.get("y_field"), state.get("color_field")))
     print(f"[data_query_node] resolved nodes: {resolved}")
     return {
         "intent_responses": {state["current_intent"]: response_text},
@@ -537,6 +609,7 @@ def _build_graph():
     builder.add_node("load_chart_node", load_chart_node)
     builder.add_node("chart_overview_node", chart_overview_node)
     builder.add_node("filter_node", filter_node)
+    builder.add_node("user_help_node", user_help_node)
     builder.add_node("data_query_node", data_query_node)
     builder.add_node("post_process_node", post_process_node)
 
@@ -547,6 +620,7 @@ def _build_graph():
         "load_chart_node":     "load_chart_node",
         "chart_overview_node": "chart_overview_node",
         "filter_node":         "filter_node",
+        "user_help_node":      "user_help_node",
         "data_query_node":     "data_query_node",
     }
     builder.add_conditional_edges("classifier_node", route_intent, handler_nodes)

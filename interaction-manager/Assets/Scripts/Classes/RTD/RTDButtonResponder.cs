@@ -31,6 +31,9 @@ public class RTDButtonResponder : MonoBehaviour, InterfaceRTDButtonResponder
 
     // agent button state (hold to record)
     private ButtonHoldState _agentHoldState = new ButtonHoldState();
+    // From the start of a recording until its transcript or cancel arrives; outlives
+    // the hold, since the transcript comes after the key is released.
+    private bool _transcriptPending;
 
     // Function button configuration
     private struct FunctionButtonConfig
@@ -366,27 +369,36 @@ public class RTDButtonResponder : MonoBehaviour, InterfaceRTDButtonResponder
     {
         yield return new WaitForSeconds(AGENT_HOLD_TIME);
         _agentWakeWord.StopAudio();
+        // The wake word can't restart listening and lose this request; release resumes it.
+        _agentWakeWord.PauseWakeWord();
         _agentHoldState.IsHeld = true;
         AppLog.Info(LogArea.Buttons, "Starting speech recognition...");
-        
+
         _audioToneManager.PlayStartTone();
+        _transcriptPending = true;
         _speechToText.StartSpeechRecognition(
-            transcript => _agentResponseHandler.HandleButtonSpeech(transcript, false), true, "none", () => AppLog.Detail(LogArea.Speech, "STT complete")
+            transcript =>
+            {
+                _transcriptPending = false;
+                _agentResponseHandler.HandleButtonSpeech(transcript, false);
+            }, true, "none", () => AppLog.Detail(LogArea.Speech, "STT complete"), pushToTalk: true
         );
     }
 
     /// <summary>
     /// Paging, stepping or skipping moves on from a question still being recorded.
     /// Drop it, so speech that starts now isn't recorded as the question. With F1
-    /// still down, end the hold as its release would (end tone, wake word back on);
-    /// after release the end tone has already played.
+    /// still down, end the hold as its release would (end tone, wake word back on).
+    /// A push-to-talk question whose key is already released is kept: it stopped
+    /// listening at the release and is only waiting for its transcript.
     /// </summary>
     private void CancelRecording()
     {
-        bool recording = _speechToText.IsRecognizing;
+        bool recording = _speechToText.IsListening;
         if (!recording && !_agentHoldState.IsHeld) return;
         if (recording)
         {
+            _transcriptPending = false;
             _speechToText.CancelSpeechRecognition();
             AppLog.Info(LogArea.Buttons, "Recording cancelled: moved on");
         }
@@ -420,9 +432,14 @@ public class RTDButtonResponder : MonoBehaviour, InterfaceRTDButtonResponder
         if (_agentHoldState.IsHeld)
         {
             AppLog.Detail(LogArea.Speech, "Transcribing STT...");
+            // Releasing the key ends the question: nothing said after it is transcribed.
+            _speechToText.EndPushToTalk();
             _audioToneManager.PlayEndTone();
             _agentWakeWord.ResumeWakeWord();
-            _agentResponseHandler.BlinkCursor();
+            // Only while the transcript is still coming: once it has arrived, the reply
+            // or "didn't get that" has already dealt with the pulse.
+            if (_transcriptPending)
+                _agentResponseHandler.BlinkCursor();
         }
 
         _agentHoldState.Reset();

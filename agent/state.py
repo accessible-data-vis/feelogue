@@ -33,6 +33,8 @@ class AgentState(TypedDict):
     active_layer: Optional[str]
     vega_lite_schema: Optional[str]
     display_marks: Optional[list]   # how the display draws each series: [{name, symbol}] or, for bars, [{name, texture}]
+    x_ticks: Optional[list]         # x tick values as drawn, left to right (x-axis-tick-0, ...)
+    y_ticks: Optional[list]         # y tick values as drawn, bottom to top (y-axis-tick-0, ...)
 
     # Follow-up / disambiguation: persisted so next turn sees pending state
     followup_stage: bool

@@ -20,9 +20,13 @@ LOAD_CHART_SCHEMA = {
                 "required": ["chart_id", "chart_name"],
                 "additionalProperties": False
             }
+        },
+        "requested": {
+            "type": "string",
+            "description": "The chart the user asked for, as heard, without the loading verb (e.g. 'interest rats' from 'load the interest rats chart'). Spoken back when nothing matches, so the user can catch a mishearing."
         }
     },
-    "required": ["matches"],
+    "required": ["matches", "requested"],
     "additionalProperties": False
 }
 
@@ -46,6 +50,7 @@ INTENT_SCHEMA={
               "data_analysis",
               "trend",
               "filter",
+              "user_help",
               "general_question"
             ],
             "description": "The classified intent type"
@@ -83,14 +88,27 @@ DATA_QUERY_SCHEMA = {
             "type": "array",
             "items": {"type": "string"},
             "description": (
-                "The `_id` of each row this answer is anchored to (e.g. the row behind a "
-                "max/min/specific-date answer), copied verbatim from a csv_query_tool result "
-                "- never invented. Empty when the answer is not tied to specific rows "
-                "(e.g. an aggregate or general statement)."
+                "The `_id` of every row the answer refers to (e.g. the row behind a "
+                "max/min/specific-date answer, a peak and a low, the rows being compared), "
+                "copied verbatim from a csv_query_tool result - never invented - plus the id "
+                "of any axis tick the answer names (`x-axis-tick-<i>` / `y-axis-tick-<i>`, "
+                "from the Axis ticks block). A whole series goes in `highlighted_series`, "
+                "never here. Empty when the answer refers to no specific row or tick."
+            ),
+        },
+        "highlighted_series": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": (
+                "The exact name of every WHOLE series the answer refers to (its trend, its "
+                "overall shape, an aggregate over all of it). The system marks every point of "
+                "each series itself. A series named with a feature or period ('Brisbane's "
+                "peak') is not a whole series: highlight those rows by id. Empty when the "
+                "answer refers to no whole series."
             ),
         },
     },
-    "required": ["message", "highlighted_ids"],
+    "required": ["message", "highlighted_ids", "highlighted_series"],
     "additionalProperties": False,
 }
 

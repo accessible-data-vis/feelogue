@@ -60,3 +60,11 @@ def test_overview_without_a_chart_says_so():
     out = g.chart_overview_node({"current_intent": "chart_overview"})
     assert "presentation_command" not in out
     assert "load a chart" in out["intent_responses"]["chart_overview"]
+
+
+def test_no_match_says_back_what_was_heard(monkeypatch):
+    reply = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(
+        content=json.dumps({"matches": [], "requested": "air fairs"})))])
+    monkeypatch.setattr(cl.client.chat.completions, "create", lambda **kw: reply)
+    out = cl.analyze_user_intent_with_context("open air fairs", {"chart_metadata_index": CHARTS, "messages": []})
+    assert out["response"].startswith("I couldn't find a chart matching air fairs.")

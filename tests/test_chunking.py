@@ -174,3 +174,10 @@ class TestPublishMessage:
         assert inner["chunks"] == ["First point.", "Second point."]
         assert len(inner["message_id"]) == 32
         assert "nodes" not in inner
+
+
+def test_a_bare_yes_or_no_joins_the_next_sentence():
+    assert split_into_chunks("No. Brisbane and Melbourne do not cross. Sydney stays higher.") == [
+        "No. Brisbane and Melbourne do not cross.", "Sydney stays higher."]
+    assert split_into_chunks("Yes! It rose.") == ["Yes! It rose."]
+    assert split_into_chunks("No, it fell. Then it rose.") == ["No, it fell.", "Then it rose."]
