@@ -4,15 +4,12 @@
 `Assets/Scripts/Classes/Hand/CapsuleHandEdit.cs` is derived from the Ultraleap Unity Plugin (com.ultraleap.tracking 7.3.0).  
 Source: https://github.com/ultraleap/UnityPlugin — Apache License 2.0 — Copyright 2011-2025 Ultraleap, Inc.
 
-## Porcupine Wake Word Engine
-`Assets/Porcupine/` contains the Picovoice Porcupine Unity SDK.  
-Source: https://github.com/Picovoice/porcupine — Picovoice proprietary license (see SDK terms).  
-Users must obtain their own access key at https://console.picovoice.ai/
+## openWakeWord Wake Word Model
+`Assets/StreamingAssets/keyword_files/Hey_Graphy.onnx` is a wake word model trained for this project with openWakeWord's training tools. Its training data may include datasets with non-commercial terms, so it is for non-commercial research use only.
 
 ## liblouis Braille Translation
-`Assets/Plugins/macOS/` contains the compiled liblouis library and translation tables.  
+Graphy uses liblouis's `lou_translate` tool for UEB grade 1 and grade 2 braille. It is installed separately with Homebrew and is not included in this repository.  
 Source: https://github.com/liblouis/liblouis — LGPL-2.1 — Copyright John J. Boyer and contributors.  
-liblouis is dynamically loaded at runtime; this project is not required to adopt the LGPL.
 
 ## TextMesh Pro
 `Assets/TextMesh Pro/` — Unity Companion License — Copyright Unity Technologies.  
